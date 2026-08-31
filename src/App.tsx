@@ -49,10 +49,18 @@ export default function App() {
   const [batchErrors, setBatchErrors] = useState<string[]>([]);
   const [activeTemplateId, setActiveTemplateId] = useState<string | null>(null);
   const [templateCountHint, setTemplateCountHint] = useState<string>('Загрузите PDF, чтобы начать.');
+  const [offlineReady, setOfflineReady] = useState(false);
 
   useEffect(() => {
     if (import.meta.env.PROD && 'serviceWorker' in navigator) {
-      navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`).catch(() => undefined);
+      navigator.serviceWorker
+        .register(`${import.meta.env.BASE_URL}sw.js`)
+        .then(async (registration) => {
+          await registration.update();
+          await navigator.serviceWorker.ready;
+          setOfflineReady(true);
+        })
+        .catch(() => setOfflineReady(false));
     }
   }, []);
 
@@ -330,7 +338,7 @@ export default function App() {
           </div>
           <div>
             <span>Приватность</span>
-            <strong>локально</strong>
+            <strong>{offlineReady ? 'локально + офлайн' : 'локально'}</strong>
           </div>
         </div>
       </header>
