@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { ControlPanel } from './components/ControlPanel';
 import { PageCanvas } from './components/PageCanvas';
@@ -32,6 +32,8 @@ export default function App() {
   const [targetDocs, setTargetDocs] = useState<PdfDocInfo[]>([]);
   const [assets, setAssets] = useState<Record<OverlayRole, PdfAsset | null>>({ stamp: null, signature: null });
   const [placements, setPlacements] = useState<Placement[]>([]);
+  const placementHistoryRef = useRef<Placement[][]>([]);
+  const [historyDepth, setHistoryDepth] = useState(0);
   const [selectedPageIndex, setSelectedPageIndex] = useState(0);
   const [activePlacementId, setActivePlacementId] = useState<string | null>(null);
   const [optimizeImages, setOptimizeImages] = useState(true);
@@ -81,6 +83,24 @@ export default function App() {
     () => placements.find((placement) => placement.id === activePlacementId) ?? null,
     [placements, activePlacementId],
   );
+
+  const rememberPlacements = () => {
+    placementHistoryRef.current = [...placementHistoryRef.current.slice(-29), placements.map((item) => ({ ...item }))];
+    setHistoryDepth(placementHistoryRef.current.length);
+  };
+
+  const clearPlacementHistory = () => {
+    placementHistoryRef.current = [];
+    setHistoryDepth(0);
+  };
+
+  const handleUndo = () => {
+    const previous = placementHistoryRef.current.pop();
+    if (!previous) return;
+    setPlacements(previous);
+    setHistoryDepth(placementHistoryRef.current.length);
+    setBusyMessage('Последнее действие отменено.');
+  };
 
   const readPdf = async (file: File): Promise<PdfDocInfo> => {
     const info = await loadPdfInfo(file);
@@ -188,6 +208,7 @@ export default function App() {
     setOptimizeImages(template.optimizeImages);
     setSelectedPageIndex(0);
     setActiveTemplateId(template.id);
+    clearPlacementHistory();
     setBusyMessage(`Шаблон "${template.name}" загружен.`);
   };
 
@@ -202,6 +223,7 @@ export default function App() {
 
   const handleAddPlacement = (role: OverlayRole) => {
     if (!sourceDoc) return;
+    rememberPlacements();
     const placement = createDefaultPlacement(role, selectedPageIndex, sourceDoc.pageMetrics[selectedPageIndex]);
     setPlacements((current) => [...current.filter((item) => !(item.pageIndex === selectedPageIndex && item.role === role)), placement]);
     setActivePlacementId(placement.id);
@@ -216,6 +238,7 @@ export default function App() {
     }
 
     if (targetPageIndex === 'all') {
+      rememberPlacements();
       const pagePlacements = placements.filter((placement) => placement.pageIndex !== sourcePageIndex);
       const cloned: Placement[] = [];
       for (let index = 0; index < sourceDoc.pageMetrics.length; index += 1) {
@@ -227,6 +250,7 @@ export default function App() {
     }
 
     if (targetPageIndex < 0 || targetPageIndex >= sourceDoc.pageMetrics.length) return;
+    rememberPlacements();
     setPlacements((current) => copyPlacements(current, sourcePageIndex, targetPageIndex));
   };
 
@@ -431,7 +455,10 @@ export default function App() {
               signatureUrl={currentAssets.signature?.dataUrl}
               activePlacementId={activePlacementId}
               onSelectPlacement={setActivePlacementId}
+              onBeginPlacementChange={rememberPlacements}
               onUpdatePlacement={handlePlacementUpdate}
+              canUndo={historyDepth > 0}
+              onUndo={handleUndo}
             />
 
             <ControlPanel
@@ -444,6 +471,7 @@ export default function App() {
               optimizeImages={optimizeImages}
               onToggleOptimize={() => setOptimizeImages((value) => !value)}
               onAddPlacement={handleAddPlacement}
+              onBeginPlacementChange={rememberPlacements}
               onUpdatePlacement={handlePlacementUpdate}
               onCopyPagePlacements={handleCopyPagePlacements}
               onSaveTemplate={handleSaveTemplate}

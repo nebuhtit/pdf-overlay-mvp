@@ -12,6 +12,7 @@ type Props = {
   optimizeImages: boolean;
   onToggleOptimize: () => void;
   onAddPlacement: (role: OverlayRole) => void;
+  onBeginPlacementChange: () => void;
   onUpdatePlacement: (placementId: string, patch: Partial<Placement>) => void;
   onCopyPagePlacements: (sourcePageIndex: number, targetPageIndex: number | 'all') => void;
   onSaveTemplate: () => void;
@@ -32,6 +33,7 @@ export function ControlPanel({
   optimizeImages,
   onToggleOptimize,
   onAddPlacement,
+  onBeginPlacementChange,
   onUpdatePlacement,
   onCopyPagePlacements,
   onSaveTemplate,
@@ -98,6 +100,7 @@ export function ControlPanel({
                 max="0.9"
                 step="0.001"
                 value={activePlacement.x}
+                onPointerDown={onBeginPlacementChange}
                 onChange={(event) => onUpdatePlacement(activePlacement.id, { x: Number(event.target.value) })}
               />
             </label>
@@ -109,6 +112,7 @@ export function ControlPanel({
                 max="0.9"
                 step="0.001"
                 value={activePlacement.y}
+                onPointerDown={onBeginPlacementChange}
                 onChange={(event) => onUpdatePlacement(activePlacement.id, { y: Number(event.target.value) })}
               />
             </label>
@@ -120,6 +124,7 @@ export function ControlPanel({
                 max="0.9"
                 step="0.001"
                 value={activePlacement.width}
+                onPointerDown={onBeginPlacementChange}
                 onChange={(event) => onUpdatePlacement(activePlacement.id, { width: Number(event.target.value) })}
               />
             </label>
@@ -131,6 +136,7 @@ export function ControlPanel({
                 max="0.9"
                 step="0.001"
                 value={activePlacement.height}
+                onPointerDown={onBeginPlacementChange}
                 onChange={(event) => onUpdatePlacement(activePlacement.id, { height: Number(event.target.value) })}
               />
             </label>
@@ -142,6 +148,7 @@ export function ControlPanel({
                 max="180"
                 step="1"
                 value={activePlacement.rotation}
+                onPointerDown={onBeginPlacementChange}
                 onChange={(event) => onUpdatePlacement(activePlacement.id, { rotation: Number(event.target.value) })}
               />
             </label>
@@ -150,7 +157,10 @@ export function ControlPanel({
               <input
                 type="checkbox"
                 checked={activePlacement.visible}
-                onChange={(event) => onUpdatePlacement(activePlacement.id, { visible: event.target.checked })}
+                onChange={(event) => {
+                  onBeginPlacementChange();
+                  onUpdatePlacement(activePlacement.id, { visible: event.target.checked });
+                }}
               />
             </label>
           </div>

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pdf-overlay-mvp-v2';
+const CACHE_NAME = 'pdf-overlay-mvp-v3';
 const SHELL = ['./', './manifest.webmanifest', './icon.svg'];
 
 self.addEventListener('install', (event) => {

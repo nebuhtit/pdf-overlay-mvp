@@ -377,13 +377,32 @@ a {
 
 .placementBox {
   position: absolute;
-  border: 1px solid rgba(125, 211, 252, 0.4);
+  border: 2px solid rgba(14, 165, 233, 0.88);
   border-radius: 16px;
   box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.4), 0 12px 28px rgba(15, 23, 42, 0.45);
   overflow: visible;
   pointer-events: auto;
   background: rgba(7, 17, 31, 0.18);
   touch-action: none;
+}
+
+.placementBox.isPlaceholder {
+  display: grid;
+  place-items: center;
+  border-style: dashed;
+  background: rgba(14, 165, 233, 0.18);
+}
+
+.placementPlaceholder {
+  padding: 8px;
+  color: #082f49;
+  background: rgba(224, 242, 254, 0.92);
+  border-radius: 8px;
+  font-size: clamp(0.58rem, 2.2vw, 0.78rem);
+  font-weight: 800;
+  line-height: 1.2;
+  text-align: center;
+  pointer-events: none;
 }
 
 .placementBox.isActive {
@@ -452,6 +471,27 @@ a {
 .pageHint.subtle {
   color: var(--muted);
   margin-top: 8px;
+}
+
+.stageTools {
+  display: grid;
+  justify-items: end;
+  gap: 8px;
+}
+
+.undoButton {
+  min-height: 38px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  color: #082f49;
+  background: var(--accent);
+  font-weight: 800;
+}
+
+.undoButton:disabled {
+  color: var(--muted);
+  background: rgba(148, 163, 184, 0.12);
+  cursor: default;
 }
 
 .field {
@@ -707,6 +747,38 @@ a {
   .pageStage {
     min-height: 250px;
     touch-action: none;
+  }
+
+  .stageHeader {
+    align-items: flex-start;
+  }
+
+  .stageMeta {
+    font-size: 0.76rem;
+  }
+
+  .undoButton {
+    min-height: 44px;
+    padding-inline: 14px;
+  }
+
+  .handle {
+    width: 30px;
+    height: 30px;
+  }
+
+  .handle.resize {
+    right: -15px;
+    bottom: -15px;
+  }
+
+  .handle.rotate {
+    top: -16px;
+  }
+
+  .placementLabel {
+    top: -34px;
+    font-size: 0.68rem;
   }
 
   .batchQueueItem {

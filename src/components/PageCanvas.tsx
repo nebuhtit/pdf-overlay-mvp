@@ -15,7 +15,10 @@ type Props = {
   signatureUrl?: string;
   activePlacementId: string | null;
   onSelectPlacement: (placementId: string) => void;
+  onBeginPlacementChange: () => void;
   onUpdatePlacement: (placementId: string, patch: Partial<Placement>) => void;
+  canUndo: boolean;
+  onUndo: () => void;
 };
 
 type DragMode = 'move' | 'resize';
@@ -29,7 +32,10 @@ export function PageCanvas({
   signatureUrl,
   activePlacementId,
   onSelectPlacement,
+  onBeginPlacementChange,
   onUpdatePlacement,
+  canUndo,
+  onUndo,
 }: Props) {
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -129,9 +135,14 @@ export function PageCanvas({
             <span>/{pageMetrics.length}</span>
           </h2>
         </div>
-        <div className="stageMeta">
-          {metrics ? `${metrics.width.toFixed(0)} × ${metrics.height.toFixed(0)} pt` : 'Нет PDF'}
-          {renderStatus === 'loading' ? 'Рендер...' : renderStatus === 'error' ? 'Ошибка рендера' : ''}
+        <div className="stageTools">
+          <div className="stageMeta">
+            {metrics ? `${metrics.width.toFixed(0)} × ${metrics.height.toFixed(0)} pt` : 'Нет PDF'}
+            {renderStatus === 'loading' ? 'Рендер...' : renderStatus === 'error' ? 'Ошибка рендера' : ''}
+          </div>
+          <button className="undoButton" type="button" onClick={onUndo} disabled={!canUndo}>
+            ↶ Отменить
+          </button>
         </div>
       </div>
 
@@ -142,7 +153,6 @@ export function PageCanvas({
             <div className="overlayLayer" style={{ width: stageSize.width, height: stageSize.height }}>
               {placements.map((placement) => {
                 const img = getImageUrl(placement.role);
-                if (!img) return null;
                 const isActive = placement.id === activePlacementId;
                 const style = {
                   left: `${placement.x * 100}%`,
@@ -155,15 +165,22 @@ export function PageCanvas({
                 return (
                   <div
                     key={placement.id}
-                    className={`placementBox ${isActive ? 'isActive' : ''}`}
+                    className={`placementBox ${isActive ? 'isActive' : ''} ${img ? '' : 'isPlaceholder'}`}
                     style={style}
                     onPointerDown={(event) => {
                       if ((event.target as HTMLElement).dataset.handle) return;
                       onSelectPlacement(placement.id);
+                      onBeginPlacementChange();
                       updatePlacementFromPointer(event, placement, 'move');
                     }}
                   >
-                    <img src={img} alt={getPlacementLabel(placement.role)} draggable={false} />
+                    {img ? (
+                      <img src={img} alt={getPlacementLabel(placement.role)} draggable={false} />
+                    ) : (
+                      <span className="placementPlaceholder">
+                        {placement.role === 'stamp' ? 'Загрузите печать PNG' : 'Загрузите подпись PNG'}
+                      </span>
+                    )}
                     <button
                       className="handle resize"
                       type="button"
@@ -172,6 +189,7 @@ export function PageCanvas({
                       onPointerDown={(event) => {
                         event.stopPropagation();
                         onSelectPlacement(placement.id);
+                        onBeginPlacementChange();
                         updatePlacementFromPointer(event, placement, 'resize');
                       }}
                     />
@@ -183,6 +201,7 @@ export function PageCanvas({
                       onClick={(event) => {
                         event.stopPropagation();
                         onSelectPlacement(placement.id);
+                        onBeginPlacementChange();
                         onUpdatePlacement(placement.id, { rotation: (placement.rotation + 15) % 360 });
                       }}
                     />
