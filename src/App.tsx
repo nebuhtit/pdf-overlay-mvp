@@ -6,11 +6,11 @@ import { TemplateShelf } from './components/TemplateShelf';
 import { applyTemplate, loadPdfInfo, optimizePdfBytes, releasePdfPreview } from './lib/pdf';
 import { createDefaultPlacement, clonePlacementForPage } from './lib/placements';
 import { deleteTemplate, listTemplates, upsertTemplate } from './lib/storage';
-import { loadImageSize, makeId, readFileAsDataUrl, shareOrDownloadBlob } from './lib/files';
+import { loadImageSize, makeId, readFileAsDataUrl, shareOrDownloadBlob, shareOrDownloadMany } from './lib/files';
 import type { OverlayRole, PdfAsset, PdfDocInfo, Placement, TemplateRecord } from './types';
 import { formatBytes } from './lib/format';
 
-const APP_VERSION = '0.6.1';
+const APP_VERSION = '0.7.0';
 
 const ensureActivePlacement = (placements: Placement[], pageIndex: number) => {
   const currentPagePlacements = placements.filter((placement) => placement.pageIndex === pageIndex);
@@ -50,11 +50,11 @@ export default function App() {
   const [previewIndex, setPreviewIndex] = useState(0);
   const [batchErrors, setBatchErrors] = useState<string[]>([]);
   const [activeTemplateId, setActiveTemplateId] = useState<string | null>(null);
-  const [templateCountHint, setTemplateCountHint] = useState<string>('Загрузите PDF, чтобы начать.');
   const [offlineReady, setOfflineReady] = useState(false);
   const [compactMode, setCompactMode] = useState(() => window.matchMedia('(max-width: 720px), (pointer: coarse)').matches);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isOptimizingPdf, setIsOptimizingPdf] = useState(false);
+  const [isExportingAll, setIsExportingAll] = useState(false);
 
   useEffect(() => {
     if (import.meta.env.PROD && 'serviceWorker' in navigator) {
@@ -93,11 +93,6 @@ export default function App() {
     const nextActive = ensureActivePlacement(placements, selectedPageIndex);
     setActivePlacementId(nextActive);
   }, [placements, selectedPageIndex]);
-
-  useEffect(() => {
-    if (!sourceDoc) return;
-    setTemplateCountHint(`${sourceDoc.pageMetrics.length} страниц`);
-  }, [sourceDoc]);
 
   const activePlacement = useMemo(
     () => placements.find((placement) => placement.id === activePlacementId) ?? null,
@@ -406,6 +401,28 @@ export default function App() {
     if (result) await exportResult(result);
   };
 
+  const handleExportAll = async () => {
+    if (isExportingAll || outputResults.length === 0) return;
+    setIsExportingAll(true);
+    setBusyMessage(`Готовлю экспорт ${outputResults.length} PDF…`);
+    try {
+      const entries = outputResults.map((result) => ({
+        blob: result.blob,
+        fileName: `${result.sourceName.replace(/\.pdf$/i, '')}-готово.pdf`,
+      }));
+      const date = new Date().toISOString().slice(0, 10);
+      const action = await shareOrDownloadMany(entries, `готовые-pdf-${date}.zip`);
+      if (action === 'shared') setBusyMessage(`Передано файлов: ${entries.length}.`);
+      if (action === 'downloaded-zip') setBusyMessage(`Сохранён ZIP: ${entries.length} PDF.`);
+      if (action === 'cancelled') setBusyMessage('Пакетный экспорт отменён.');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'неизвестная ошибка';
+      setBusyMessage(`Не удалось экспортировать все PDF: ${message}`);
+    } finally {
+      setIsExportingAll(false);
+    }
+  };
+
   const handlePlacementUpdate = (placementId: string, patch: Partial<Placement>) => {
     setPlacements((current) => updatePlacement(current, placementId, patch));
   };
@@ -418,27 +435,13 @@ export default function App() {
         <div className="heroCopy">
           <div className="eyebrow versionLine">
             <span className="versionBadge">Версия {APP_VERSION}</span>
-            <span>Локально. Без сервера. Для iPhone и Mac.</span>
+            <span>Локально. Без сервера. {offlineReady ? 'Офлайн-кэш готов.' : 'Для iPhone и Mac.'}</span>
           </div>
           <h1>PDF overlay MVP</h1>
           <p>
             Загружайте PDF, ставьте печать и подпись на нужные страницы, сохраняйте шаблоны и применяйте их к
             другим документам в браузере.
           </p>
-        </div>
-        <div className="heroStats">
-          <div>
-            <span>Шаблонов</span>
-            <strong>{templates.length}</strong>
-          </div>
-          <div>
-            <span>Страниц в проекте</span>
-            <strong>{templateCountHint}</strong>
-          </div>
-          <div>
-            <span>Приватность</span>
-            <strong>{offlineReady ? 'локально + офлайн' : 'локально'}</strong>
-          </div>
         </div>
       </header>
 
@@ -631,14 +634,26 @@ export default function App() {
 
           {outputResults.length > 0 ? (
             <section className="panel previewPanel">
-              <div className="panelHeader">
+              <div className="panelHeader previewHeader">
                 <div>
                   <div className="eyebrow">Предпросмотр</div>
                   <h3>Готовые файлы ({outputResults.length})</h3>
                 </div>
-                <a href={outputResults[previewIndex].blobUrl} target="_blank" rel="noreferrer">
-                  Открыть PDF
-                </a>
+                <div className="previewActions">
+                  <a href={outputResults[previewIndex].blobUrl} target="_blank" rel="noreferrer">
+                    Открыть PDF
+                  </a>
+                  {outputResults.length > 1 ? (
+                    <button
+                      className="downloadAllButton"
+                      type="button"
+                      onClick={() => void handleExportAll()}
+                      disabled={isExportingAll}
+                    >
+                      {isExportingAll ? 'Готовлю ZIP…' : `Экспортировать все (${outputResults.length})`}
+                    </button>
+                  ) : null}
+                </div>
               </div>
               <div className="resultList">
                 {outputResults.map((result, index) => (

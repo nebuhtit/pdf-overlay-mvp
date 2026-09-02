@@ -68,15 +68,10 @@ a {
 }
 
 .hero {
-  display: grid;
-  gap: 16px;
-  grid-template-columns: 1.6fr 1fr;
-  align-items: stretch;
   margin-bottom: 18px;
 }
 
 .heroCopy,
-.heroStats,
 .panel,
 .stageCard {
   background: var(--panel);
@@ -120,21 +115,6 @@ a {
   line-height: 1.55;
 }
 
-.heroStats {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-  padding: 18px;
-}
-
-.heroStats div {
-  padding: 18px;
-  border-radius: 20px;
-  background: linear-gradient(180deg, rgba(148, 163, 184, 0.09), rgba(15, 23, 42, 0.18));
-  border: 1px solid rgba(148, 163, 184, 0.12);
-}
-
-.heroStats span,
 .eyebrow,
 .panelMeta,
 .stageMeta,
@@ -149,12 +129,6 @@ a {
   color: var(--muted);
   font-size: 0.84rem;
   letter-spacing: 0.02em;
-}
-
-.heroStats strong {
-  display: block;
-  margin-top: 10px;
-  font-size: 1.2rem;
 }
 
 .layout {
@@ -363,6 +337,30 @@ a {
   color: #06111e;
   background: var(--accent);
   font-weight: 700;
+}
+
+.previewActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.previewActions a,
+.downloadAllButton {
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-weight: 700;
+}
+
+.previewActions a {
+  color: var(--accent);
+  background: rgba(14, 165, 233, 0.1);
+}
+
+.downloadAllButton {
+  color: #06111e;
+  background: var(--accent-3);
 }
 
 .mobilePreviewNotice {
@@ -773,7 +771,6 @@ button:disabled {
 }
 
 @media (max-width: 1120px) {
-  .hero,
   .editorGrid,
   .uploadGrid {
     grid-template-columns: 1fr;
@@ -795,26 +792,6 @@ button:disabled {
 
   .appShell {
     padding: max(10px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
-  }
-
-  .heroStats {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    padding: 8px;
-    gap: 6px;
-  }
-
-  .heroStats div {
-    padding: 10px 8px;
-    border-radius: 14px;
-  }
-
-  .heroStats strong {
-    margin-top: 6px;
-    font-size: 0.88rem;
-  }
-
-  .heroStats span {
-    font-size: 0.68rem;
   }
 
   .heroCopy {
@@ -928,9 +905,20 @@ button:disabled {
 
   .panel,
   .stageCard,
-  .heroCopy,
-  .heroStats {
+  .heroCopy {
     border-radius: 20px;
+  }
+
+  .previewHeader,
+  .previewActions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .previewActions a,
+  .downloadAllButton {
+    width: 100%;
+    text-align: center;
   }
 
   .pdfPreviewFrame {
