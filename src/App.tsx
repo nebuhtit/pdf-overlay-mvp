@@ -10,7 +10,7 @@ import { loadImageSize, makeId, readFileAsDataUrl, shareOrDownloadBlob } from '.
 import type { OverlayRole, PdfAsset, PdfDocInfo, Placement, TemplateRecord } from './types';
 import { formatBytes } from './lib/format';
 
-const APP_VERSION = '0.6.0';
+const APP_VERSION = '0.6.1';
 
 const ensureActivePlacement = (placements: Placement[], pageIndex: number) => {
   const currentPagePlacements = placements.filter((placement) => placement.pageIndex === pageIndex);
@@ -59,7 +59,7 @@ export default function App() {
   useEffect(() => {
     if (import.meta.env.PROD && 'serviceWorker' in navigator) {
       navigator.serviceWorker
-        .register(`${import.meta.env.BASE_URL}sw.js`)
+        .register(`${import.meta.env.BASE_URL}sw.js`, { updateViaCache: 'none' })
         .then(async (registration) => {
           await registration.update();
           await navigator.serviceWorker.ready;
