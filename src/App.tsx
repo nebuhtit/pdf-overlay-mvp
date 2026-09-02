@@ -10,7 +10,7 @@ import { loadImageSize, makeId, readFileAsDataUrl, shareOrDownloadBlob } from '.
 import type { OverlayRole, PdfAsset, PdfDocInfo, Placement, TemplateRecord } from './types';
 import { formatBytes } from './lib/format';
 
-const APP_VERSION = '0.4.0';
+const APP_VERSION = '0.5.0';
 
 const ensureActivePlacement = (placements: Placement[], pageIndex: number) => {
   const currentPagePlacements = placements.filter((placement) => placement.pageIndex === pageIndex);
@@ -52,6 +52,8 @@ export default function App() {
   const [activeTemplateId, setActiveTemplateId] = useState<string | null>(null);
   const [templateCountHint, setTemplateCountHint] = useState<string>('Загрузите PDF, чтобы начать.');
   const [offlineReady, setOfflineReady] = useState(false);
+  const [compactMode, setCompactMode] = useState(() => window.matchMedia('(max-width: 720px), (pointer: coarse)').matches);
+  const [isProcessing, setIsProcessing] = useState(false);
 
   useEffect(() => {
     if (import.meta.env.PROD && 'serviceWorker' in navigator) {
@@ -64,6 +66,13 @@ export default function App() {
         })
         .catch(() => setOfflineReady(false));
     }
+  }, []);
+
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 720px), (pointer: coarse)');
+    const update = () => setCompactMode(media.matches);
+    media.addEventListener('change', update);
+    return () => media.removeEventListener('change', update);
   }, []);
 
   useEffect(() => {
@@ -265,11 +274,13 @@ export default function App() {
   };
 
   const handleApplyTemplate = async () => {
+    if (isProcessing) return [];
     const docs = targetDocs.length > 0 ? targetDocs : sourceDoc ? [sourceDoc] : [];
     if (docs.length === 0) {
       setBusyMessage('Сначала загрузите PDF.');
       return [];
     }
+    setIsProcessing(true);
     setBusyMessage(`Обрабатываю PDF: 0 из ${docs.length}...`);
     outputResults.forEach((item) => URL.revokeObjectURL(item.blobUrl));
     const nextResults = [];
@@ -277,6 +288,7 @@ export default function App() {
     for (let index = 0; index < docs.length; index += 1) {
       try {
         const doc = docs[index];
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
         const result = await applyTemplate(doc.bytes, doc.pageMetrics, placements, assets, optimizeImages);
         nextResults.push({
           sourceName: doc.name,
@@ -294,6 +306,7 @@ export default function App() {
     setOutputResults(nextResults);
     setBatchErrors(errors);
     setPreviewIndex(0);
+    setIsProcessing(false);
     setBusyMessage(`Готово: ${nextResults.length} из ${docs.length}${errors.length ? `, ошибок: ${errors.length}` : ''}.`);
     return nextResults;
   };
@@ -497,6 +510,7 @@ export default function App() {
               onSaveTemplate={handleSaveTemplate}
               onApplyTemplate={handleApplyTemplate}
               onExportPdf={handleExportPdf}
+              isProcessing={isProcessing}
               sourceSize={sourceDoc?.fileSize ?? 0}
               outputSize={outputResults[previewIndex]?.size}
               outputTemplate={activeTemplateId ? templates.find((item) => item.id === activeTemplateId) ?? null : null}
@@ -532,7 +546,13 @@ export default function App() {
                   </div>
                 ))}
               </div>
-              <iframe className="pdfPreviewFrame" src={outputResults[previewIndex].blobUrl} title="Предпросмотр PDF" />
+              {compactMode ? (
+                <div className="mobilePreviewNotice">
+                  Предпросмотр внутри страницы отключён для экономии памяти iPhone. Используйте «Открыть PDF» или «Экспорт».
+                </div>
+              ) : (
+                <iframe className="pdfPreviewFrame" src={outputResults[previewIndex].blobUrl} title="Предпросмотр PDF" />
+              )}
             </section>
           ) : null}
         </section>

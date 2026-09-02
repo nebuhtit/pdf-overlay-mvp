@@ -1,4 +1,4 @@
-import { PDFDocument, degrees } from 'pdf-lib';
+import { PDFDocument, PDFImage, degrees } from 'pdf-lib';
 import * as pdfjsLib from 'pdfjs-dist';
 
 import type { ExportResult, PageMetrics, PdfAsset, Placement } from '../types';
@@ -10,11 +10,25 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
 ).toString();
 
 const PDF_OPTIMIZE_MAX_IMAGE_EDGE = 1800;
+const PDF_OPTIMIZE_MOBILE_IMAGE_EDGE = 1000;
+const previewDocuments = new WeakMap<Uint8Array, Promise<pdfjsLib.PDFDocumentProxy>>();
 
 const getPdfJsDocument = async (bytes: Uint8Array) => {
+  const cached = previewDocuments.get(bytes);
+  if (cached) return cached;
+
   // PDF.js transfers the supplied buffer to its worker. Always pass a copy so
   // the original remains available for later pages and final PDF export.
-  return pdfjsLib.getDocument({ data: bytes.slice() }).promise;
+  const loading = pdfjsLib.getDocument({ data: bytes.slice(), isEvalSupported: false }).promise;
+  previewDocuments.set(bytes, loading);
+  loading.catch(() => previewDocuments.delete(bytes));
+  return loading;
+};
+
+export const releasePdfPreview = (bytes: Uint8Array) => {
+  const document = previewDocuments.get(bytes);
+  previewDocuments.delete(bytes);
+  document?.then((pdf) => pdf.destroy()).catch(() => undefined);
 };
 
 export const loadPdfInfo = async (file: File): Promise<{ bytes: Uint8Array; pageMetrics: PageMetrics[] }> => {
@@ -35,8 +49,8 @@ export const renderPdfPage = async (
   signal?: AbortSignal,
 ) => {
   const pdf = await getPdfJsDocument(pdfBytes);
+  const page = await pdf.getPage(pageIndex + 1);
   try {
-    const page = await pdf.getPage(pageIndex + 1);
     const viewport = page.getViewport({ scale: targetWidth / page.getViewport({ scale: 1 }).width });
     const renderCanvas = document.createElement('canvas');
     const renderContext = renderCanvas.getContext('2d');
@@ -53,7 +67,7 @@ export const renderPdfPage = async (
     canvas.height = renderCanvas.height;
     context.drawImage(renderCanvas, 0, 0);
   } finally {
-    await pdf.destroy();
+    page.cleanup();
   }
 };
 
@@ -68,7 +82,9 @@ const decodeImage = (dataUrl: string) =>
 const scaleImageToMaxEdge = async (dataUrl: string) => {
   const image = await decodeImage(dataUrl);
   const longest = Math.max(image.naturalWidth, image.naturalHeight);
-  if (longest <= PDF_OPTIMIZE_MAX_IMAGE_EDGE) {
+  const mobile = window.matchMedia('(max-width: 720px), (pointer: coarse)').matches;
+  const maxEdge = mobile ? PDF_OPTIMIZE_MOBILE_IMAGE_EDGE : PDF_OPTIMIZE_MAX_IMAGE_EDGE;
+  if (longest <= maxEdge) {
     return {
       dataUrl,
       width: image.naturalWidth,
@@ -77,7 +93,7 @@ const scaleImageToMaxEdge = async (dataUrl: string) => {
     };
   }
 
-  const scale = PDF_OPTIMIZE_MAX_IMAGE_EDGE / longest;
+  const scale = maxEdge / longest;
   const width = Math.max(1, Math.round(image.naturalWidth * scale));
   const height = Math.max(1, Math.round(image.naturalHeight * scale));
   const canvas = document.createElement('canvas');
@@ -135,6 +151,14 @@ export const applyTemplate = async (
 ): Promise<ExportResult> => {
   const pdf = await PDFDocument.load(sourceBytes);
   const workingAssets = optimizeImages ? await optimizeAssets(assets) : assets;
+  const embeddedAssets: Record<'stamp' | 'signature', PDFImage | null> = { stamp: null, signature: null };
+
+  for (const role of ['stamp', 'signature'] as const) {
+    const asset = workingAssets[role];
+    if (!asset) continue;
+    const imageBytes = await bytesFromDataUrl(selectAssetData(asset));
+    embeddedAssets[role] = await pdf.embedPng(imageBytes);
+  }
 
   for (const placement of placements) {
     if (!placement.visible) continue;
@@ -142,14 +166,12 @@ export const applyTemplate = async (
     const page = pdf.getPage(placement.pageIndex);
     if (!page) continue;
 
-    const asset = workingAssets[placement.role];
-    if (!asset) continue;
+    const embedded = embeddedAssets[placement.role];
+    if (!embedded) continue;
 
     const pageSize = pageMetrics[placement.pageIndex];
     if (!pageSize) continue;
 
-    const imageBytes = await bytesFromDataUrl(selectAssetData(asset));
-    const embedded = await pdf.embedPng(imageBytes);
     const x = placement.x * pageSize.width;
     const y = (1 - placement.y - placement.height) * pageSize.height;
     const width = placement.width * pageSize.width;
@@ -167,6 +189,7 @@ export const applyTemplate = async (
   const outputBytes = await pdf.save({
     useObjectStreams: true,
     updateFieldAppearances: false,
+    objectsPerTick: 20,
   });
 
   return {

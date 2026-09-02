@@ -3,7 +3,7 @@ import type { PointerEvent as ReactPointerEvent } from 'react';
 
 import type { PageMetrics, Placement } from '../types';
 import { formatBytes } from '../lib/format';
-import { renderPdfPage } from '../lib/pdf';
+import { releasePdfPreview, renderPdfPage } from '../lib/pdf';
 import { getPlacementLabel } from '../lib/placements';
 
 type Props = {
@@ -53,6 +53,11 @@ export function PageCanvas({
     observer.observe(wrapperRef.current);
     return () => observer.disconnect();
   }, []);
+
+  useEffect(() => {
+    if (!sourceBytes) return;
+    return () => releasePdfPreview(sourceBytes);
+  }, [sourceBytes]);
 
   useEffect(() => {
     const canvas = canvasRef.current;

@@ -334,6 +334,20 @@ a {
   font-weight: 700;
 }
 
+.mobilePreviewNotice {
+  padding: 16px;
+  border-radius: 16px;
+  color: var(--muted);
+  background: rgba(15, 23, 42, 0.48);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  line-height: 1.45;
+}
+
+button:disabled {
+  opacity: 0.56;
+  cursor: wait;
+}
+
 .workspace {
   display: grid;
   gap: 16px;

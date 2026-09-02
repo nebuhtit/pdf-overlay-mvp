@@ -18,6 +18,7 @@ type Props = {
   onSaveTemplate: () => void;
   onApplyTemplate: () => void;
   onExportPdf: () => void;
+  isProcessing: boolean;
   sourceSize: number;
   outputSize?: number;
   outputTemplate?: TemplateRecord | null;
@@ -39,6 +40,7 @@ export function ControlPanel({
   onSaveTemplate,
   onApplyTemplate,
   onExportPdf,
+  isProcessing,
   sourceSize,
   outputSize,
   outputTemplate,
@@ -186,10 +188,10 @@ export function ControlPanel({
         <button type="button" className="primary" onClick={onSaveTemplate}>
           Сохранить шаблон
         </button>
-        <button type="button" className="primary secondaryAccent" onClick={onApplyTemplate}>
-          Обработать выбранные PDF
+        <button type="button" className="primary secondaryAccent" onClick={onApplyTemplate} disabled={isProcessing}>
+          {isProcessing ? 'Обрабатываю PDF…' : 'Обработать выбранные PDF'}
         </button>
-        <button type="button" className="primary ghost" onClick={onExportPdf}>
+        <button type="button" className="primary ghost" onClick={onExportPdf} disabled={isProcessing}>
           Экспортировать готовый PDF
         </button>
       </div>
