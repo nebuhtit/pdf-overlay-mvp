@@ -10,6 +10,8 @@ import { loadImageSize, makeId, readFileAsDataUrl, shareOrDownloadBlob } from '.
 import type { OverlayRole, PdfAsset, PdfDocInfo, Placement, TemplateRecord } from './types';
 import { formatBytes } from './lib/format';
 
+const APP_VERSION = '0.4.0';
+
 const ensureActivePlacement = (placements: Placement[], pageIndex: number) => {
   const currentPagePlacements = placements.filter((placement) => placement.pageIndex === pageIndex);
   if (currentPagePlacements.length > 0) return currentPagePlacements[0].id;
@@ -327,7 +329,10 @@ export default function App() {
     <div className="appShell">
       <header className="hero">
         <div className="heroCopy">
-          <div className="eyebrow">Локально. Без сервера. Для iPhone и Mac.</div>
+          <div className="eyebrow versionLine">
+            <span className="versionBadge">Версия {APP_VERSION}</span>
+            <span>Локально. Без сервера. Для iPhone и Mac.</span>
+          </div>
           <h1>PDF overlay MVP</h1>
           <p>
             Загружайте PDF, ставьте печать и подпись на нужные страницы, сохраняйте шаблоны и применяйте их к
