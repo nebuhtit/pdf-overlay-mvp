@@ -12,7 +12,9 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
 const PDF_OPTIMIZE_MAX_IMAGE_EDGE = 1800;
 
 const getPdfJsDocument = async (bytes: Uint8Array) => {
-  return pdfjsLib.getDocument({ data: bytes }).promise;
+  // PDF.js transfers the supplied buffer to its worker. Always pass a copy so
+  // the original remains available for later pages and final PDF export.
+  return pdfjsLib.getDocument({ data: bytes.slice() }).promise;
 };
 
 export const loadPdfInfo = async (file: File): Promise<{ bytes: Uint8Array; pageMetrics: PageMetrics[] }> => {
@@ -30,22 +32,29 @@ export const renderPdfPage = async (
   pageIndex: number,
   canvas: HTMLCanvasElement,
   targetWidth: number,
+  signal?: AbortSignal,
 ) => {
   const pdf = await getPdfJsDocument(pdfBytes);
-  const page = await pdf.getPage(pageIndex + 1);
-  const viewport = page.getViewport({ scale: targetWidth / page.getViewport({ scale: 1 }).width });
-  const context = canvas.getContext('2d');
-  if (!context) throw new Error('Canvas context not available');
+  try {
+    const page = await pdf.getPage(pageIndex + 1);
+    const viewport = page.getViewport({ scale: targetWidth / page.getViewport({ scale: 1 }).width });
+    const renderCanvas = document.createElement('canvas');
+    const renderContext = renderCanvas.getContext('2d');
+    if (!renderContext) throw new Error('Canvas context not available');
 
-  canvas.width = Math.max(1, Math.floor(viewport.width));
-  canvas.height = Math.max(1, Math.floor(viewport.height));
+    renderCanvas.width = Math.max(1, Math.floor(viewport.width));
+    renderCanvas.height = Math.max(1, Math.floor(viewport.height));
+    await page.render({ canvasContext: renderContext, viewport }).promise;
+    if (signal?.aborted) return;
 
-  await page.render({
-    canvasContext: context,
-    viewport,
-  }).promise;
-
-  pdf.cleanup();
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('Canvas context not available');
+    canvas.width = renderCanvas.width;
+    canvas.height = renderCanvas.height;
+    context.drawImage(renderCanvas, 0, 0);
+  } finally {
+    await pdf.destroy();
+  }
 };
 
 const decodeImage = (dataUrl: string) =>

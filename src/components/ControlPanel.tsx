@@ -190,7 +190,7 @@ export function ControlPanel({
           Обработать выбранные PDF
         </button>
         <button type="button" className="primary ghost" onClick={onExportPdf}>
-          Показать готовые файлы
+          Экспортировать готовый PDF
         </button>
       </div>
 

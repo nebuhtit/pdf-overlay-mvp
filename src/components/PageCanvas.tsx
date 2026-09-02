@@ -58,8 +58,9 @@ export function PageCanvas({
     const canvas = canvasRef.current;
     if (!sourceBytes || !canvas || !metrics || !stageWidth) return;
     let cancelled = false;
+    const controller = new AbortController();
     setRenderStatus('loading');
-    renderPdfPage(sourceBytes, pageIndex, canvas, stageWidth)
+    renderPdfPage(sourceBytes, pageIndex, canvas, stageWidth, controller.signal)
       .then(() => {
         if (!cancelled) setRenderStatus('ready');
       })
@@ -68,6 +69,7 @@ export function PageCanvas({
       });
     return () => {
       cancelled = true;
+      controller.abort();
     };
   }, [sourceBytes, pageIndex, metrics, stageWidth]);
 

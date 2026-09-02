@@ -36,5 +36,20 @@ export const downloadBlob = (blob: Blob, fileName: string) => {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 };
 
+export const shareOrDownloadBlob = async (blob: Blob, fileName: string) => {
+  const file = new File([blob], fileName, { type: blob.type || 'application/pdf' });
+  if (navigator.share && navigator.canShare?.({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file], title: fileName });
+      return 'shared' as const;
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return 'cancelled' as const;
+      // Fall back to a normal download if Web Share fails unexpectedly.
+    }
+  }
+  downloadBlob(blob, fileName);
+  return 'downloaded' as const;
+};
+
 export const makeId = (prefix: string) =>
   `${prefix}-${Math.random().toString(36).slice(2, 8)}-${Date.now().toString(36)}`;

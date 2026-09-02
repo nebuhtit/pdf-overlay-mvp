@@ -6,7 +6,7 @@ import { TemplateShelf } from './components/TemplateShelf';
 import { applyTemplate, loadPdfInfo } from './lib/pdf';
 import { createDefaultPlacement, clonePlacementForPage } from './lib/placements';
 import { deleteTemplate, listTemplates, upsertTemplate } from './lib/storage';
-import { downloadBlob, loadImageSize, makeId, readFileAsDataUrl } from './lib/files';
+import { loadImageSize, makeId, readFileAsDataUrl, shareOrDownloadBlob } from './lib/files';
 import type { OverlayRole, PdfAsset, PdfDocInfo, Placement, TemplateRecord } from './types';
 import { formatBytes } from './lib/format';
 
@@ -266,7 +266,7 @@ export default function App() {
     const docs = targetDocs.length > 0 ? targetDocs : sourceDoc ? [sourceDoc] : [];
     if (docs.length === 0) {
       setBusyMessage('Сначала загрузите PDF.');
-      return;
+      return [];
     }
     setBusyMessage(`Обрабатываю PDF: 0 из ${docs.length}...`);
     outputResults.forEach((item) => URL.revokeObjectURL(item.blobUrl));
@@ -293,21 +293,28 @@ export default function App() {
     setBatchErrors(errors);
     setPreviewIndex(0);
     setBusyMessage(`Готово: ${nextResults.length} из ${docs.length}${errors.length ? `, ошибок: ${errors.length}` : ''}.`);
+    return nextResults;
   };
 
   const handleExportPdf = async () => {
-    if (outputResults.length === 0) {
-      await handleApplyTemplate();
-      return;
-    }
-    setBusyMessage('Скачайте нужные файлы из списка готовых результатов.');
+    const results = outputResults.length > 0 ? outputResults : await handleApplyTemplate();
+    const result = results[outputResults.length > 0 ? previewIndex : 0];
+    if (!result) return;
+    await exportResult(result);
   };
 
-  const downloadResult = (index: number) => {
-    const result = outputResults[index];
+  const exportResult = async (result: (typeof outputResults)[number]) => {
     if (!result) return;
     const baseName = result.sourceName.replace(/\.pdf$/i, '');
-    downloadBlob(result.blob, `${baseName}-готово.pdf`);
+    const action = await shareOrDownloadBlob(result.blob, `${baseName}-готово.pdf`);
+    if (action === 'shared') setBusyMessage('PDF передан через меню «Поделиться».');
+    if (action === 'downloaded') setBusyMessage('PDF сохранён в загрузки.');
+    if (action === 'cancelled') setBusyMessage('Экспорт отменён.');
+  };
+
+  const downloadResult = async (index: number) => {
+    const result = outputResults[index];
+    if (result) await exportResult(result);
   };
 
   const handlePlacementUpdate = (placementId: string, patch: Partial<Placement>) => {
@@ -516,7 +523,7 @@ export default function App() {
                       <strong>{result.sourceName}</strong>
                       <small>{formatBytes(result.sourceSize)} → {formatBytes(result.size)}</small>
                     </button>
-                    <button className="downloadButton" type="button" onClick={() => downloadResult(index)}>Скачать</button>
+                    <button className="downloadButton" type="button" onClick={() => void downloadResult(index)}>Экспорт</button>
                   </div>
                 ))}
               </div>
