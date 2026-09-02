@@ -41,6 +41,11 @@ export function PageCanvas({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [stageWidth, setStageWidth] = useState(0);
   const [renderStatus, setRenderStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
+  const [renderedPage, setRenderedPage] = useState<{
+    sourceBytes: Uint8Array;
+    pageIndex: number;
+    stageWidth: number;
+  } | null>(null);
 
   const metrics = pageMetrics[pageIndex];
 
@@ -67,10 +72,16 @@ export function PageCanvas({
     setRenderStatus('loading');
     renderPdfPage(sourceBytes, pageIndex, canvas, stageWidth, controller.signal)
       .then(() => {
-        if (!cancelled) setRenderStatus('ready');
+        if (!cancelled) {
+          setRenderedPage({ sourceBytes, pageIndex, stageWidth });
+          setRenderStatus('ready');
+        }
       })
       .catch(() => {
-        if (!cancelled) setRenderStatus('error');
+        if (!cancelled) {
+          setRenderedPage({ sourceBytes, pageIndex, stageWidth });
+          setRenderStatus('error');
+        }
       });
     return () => {
       cancelled = true;
@@ -83,6 +94,17 @@ export function PageCanvas({
     const height = Math.round((stageWidth * metrics.height) / metrics.width);
     return { width: stageWidth, height };
   }, [metrics, stageWidth]);
+
+  const pageIsReady =
+    renderStatus === 'ready' &&
+    renderedPage?.sourceBytes === sourceBytes &&
+    renderedPage.pageIndex === pageIndex &&
+    renderedPage.stageWidth === stageWidth;
+  const pageHasError =
+    renderStatus === 'error' &&
+    renderedPage?.sourceBytes === sourceBytes &&
+    renderedPage.pageIndex === pageIndex &&
+    renderedPage.stageWidth === stageWidth;
 
   const getImageUrl = (role: Placement['role']) => {
     if (role === 'stamp') return stampUrl;
@@ -145,7 +167,7 @@ export function PageCanvas({
         <div className="stageTools">
           <div className="stageMeta">
             {metrics ? `${metrics.width.toFixed(0)} × ${metrics.height.toFixed(0)} pt` : 'Нет PDF'}
-            {renderStatus === 'loading' ? 'Рендер...' : renderStatus === 'error' ? 'Ошибка рендера' : ''}
+            {sourceBytes && !pageIsReady ? (pageHasError ? ' · ошибка' : ' · загрузка') : ''}
           </div>
           <button className="undoButton" type="button" onClick={onUndo} disabled={!canUndo}>
             ↶ Отменить
@@ -153,11 +175,31 @@ export function PageCanvas({
         </div>
       </div>
 
-      <div className="pageStage" ref={wrapperRef} data-stage="true">
+      <div
+        className="pageStage"
+        ref={wrapperRef}
+        data-stage="true"
+        style={stageSize ? { minHeight: stageSize.height } : undefined}
+      >
         {stageSize ? (
           <>
-            <canvas ref={canvasRef} className="pdfCanvas" />
-            <div className="overlayLayer" style={{ width: stageSize.width, height: stageSize.height }}>
+            <canvas
+              ref={canvasRef}
+              className={`pdfCanvas ${pageIsReady ? 'isReady' : ''}`}
+              style={{ width: stageSize.width, height: stageSize.height }}
+            />
+            {!pageIsReady ? (
+              <div className={`pageLoading ${pageHasError ? 'isError' : ''}`} role="status" aria-live="polite">
+                <span className="pageLoadingSpinner" aria-hidden="true" />
+                <strong>{pageHasError ? 'Не удалось показать страницу' : `Загружаю страницу ${pageIndex + 1}…`}</strong>
+                <small>{pageHasError ? 'Попробуйте выбрать страницу ещё раз.' : 'Предыдущая страница скрыта, чтобы не вводить в заблуждение.'}</small>
+              </div>
+            ) : null}
+            <div
+              className={`overlayLayer ${pageIsReady ? 'isReady' : ''}`}
+              style={{ width: stageSize.width, height: stageSize.height }}
+              aria-hidden={!pageIsReady}
+            >
               {placements.map((placement) => {
                 const img = getImageUrl(placement.role);
                 const isActive = placement.id === activePlacementId;

@@ -3,14 +3,14 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ControlPanel } from './components/ControlPanel';
 import { PageCanvas } from './components/PageCanvas';
 import { TemplateShelf } from './components/TemplateShelf';
-import { applyTemplate, loadPdfInfo } from './lib/pdf';
+import { applyTemplate, loadPdfInfo, optimizePdfBytes, releasePdfPreview } from './lib/pdf';
 import { createDefaultPlacement, clonePlacementForPage } from './lib/placements';
 import { deleteTemplate, listTemplates, upsertTemplate } from './lib/storage';
 import { loadImageSize, makeId, readFileAsDataUrl, shareOrDownloadBlob } from './lib/files';
 import type { OverlayRole, PdfAsset, PdfDocInfo, Placement, TemplateRecord } from './types';
 import { formatBytes } from './lib/format';
 
-const APP_VERSION = '0.5.0';
+const APP_VERSION = '0.6.0';
 
 const ensureActivePlacement = (placements: Placement[], pageIndex: number) => {
   const currentPagePlacements = placements.filter((placement) => placement.pageIndex === pageIndex);
@@ -54,6 +54,7 @@ export default function App() {
   const [offlineReady, setOfflineReady] = useState(false);
   const [compactMode, setCompactMode] = useState(() => window.matchMedia('(max-width: 720px), (pointer: coarse)').matches);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isOptimizingPdf, setIsOptimizingPdf] = useState(false);
 
   useEffect(() => {
     if (import.meta.env.PROD && 'serviceWorker' in navigator) {
@@ -173,6 +174,79 @@ export default function App() {
     setOutputResults([]);
     setPreviewIndex(0);
     setBusyMessage('Очередь очищена.');
+  };
+
+  const clearOutputResults = () => {
+    outputResults.forEach((item) => URL.revokeObjectURL(item.blobUrl));
+    setOutputResults([]);
+    setPreviewIndex(0);
+  };
+
+  const handleOptimizePdfs = async () => {
+    if (isOptimizingPdf || isProcessing) return;
+    const total = (sourceDoc ? 1 : 0) + targetDocs.length;
+    if (total === 0) {
+      setBusyMessage('Сначала загрузите хотя бы один PDF.');
+      return;
+    }
+
+    setIsOptimizingPdf(true);
+    clearOutputResults();
+    const errors: string[] = [];
+    let completed = 0;
+    let reducedCount = 0;
+    let bytesSaved = 0;
+
+    const optimizeDoc = async (doc: PdfDocInfo) => {
+      setBusyMessage(`Оптимизирую PDF: ${completed + 1} из ${total} — ${doc.name}`);
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      try {
+        const sourceSize = doc.bytes.byteLength;
+        const result = await optimizePdfBytes(doc.bytes);
+        const resultSize = result.bytes.byteLength;
+        if (result.reduced) {
+          reducedCount += 1;
+          bytesSaved += sourceSize - resultSize;
+        }
+        return {
+          ...doc,
+          bytes: result.bytes,
+          fileSize: resultSize,
+          optimization: { sourceSize, resultSize, reduced: result.reduced },
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'неизвестная ошибка';
+        errors.push(`${doc.name}: оптимизация не выполнена — ${message}`);
+        return doc;
+      } finally {
+        completed += 1;
+      }
+    };
+
+    try {
+      if (sourceDoc) {
+        const optimizedSource = await optimizeDoc(sourceDoc);
+        if (optimizedSource.bytes !== sourceDoc.bytes) releasePdfPreview(sourceDoc.bytes);
+        setSourceDoc(optimizedSource);
+      }
+
+      const optimizedTargets: PdfDocInfo[] = [];
+      for (const doc of targetDocs) {
+        optimizedTargets.push(await optimizeDoc(doc));
+      }
+      setTargetDocs(optimizedTargets);
+      setBatchErrors(errors);
+
+      if (reducedCount > 0) {
+        setBusyMessage(`Оптимизация готова: уменьшено ${reducedCount} из ${total}, сэкономлено ${formatBytes(bytesSaved)}.`);
+      } else if (errors.length > 0) {
+        setBusyMessage(`Оптимизация завершена с ошибками: ${errors.length}. Исходные PDF сохранены.`);
+      } else {
+        setBusyMessage('Проверено: PDF уже компактны. Оставлены исходные файлы без увеличения размера.');
+      }
+    } finally {
+      setIsOptimizingPdf(false);
+    }
   };
 
   const loadAsset = async (file: File, role: OverlayRole) => {
@@ -440,6 +514,13 @@ export default function App() {
                   <div>
                     <strong>{doc.name}</strong>
                     <small>{doc.pageMetrics.length} стр. · {formatBytes(doc.fileSize)}</small>
+                    {doc.optimization ? (
+                      <small className={doc.optimization.reduced ? 'optimizationSaved' : ''}>
+                        {doc.optimization.reduced
+                          ? `Оптимизирован: ${formatBytes(doc.optimization.sourceSize)} → ${formatBytes(doc.optimization.resultSize)}`
+                          : 'Проверен: исходник уже компактнее'}
+                      </small>
+                    ) : null}
                   </div>
                   <button type="button" aria-label={`Удалить ${doc.name}`} onClick={() => removeTargetPdf(index)}>Удалить</button>
                 </div>
@@ -452,6 +533,30 @@ export default function App() {
               {batchErrors.map((message, index) => <div key={`${message}-${index}`}>{message}</div>)}
             </div>
           ) : null}
+
+          <div className="pdfOptimization">
+            <div>
+              <strong>Тяжёлый или странный PDF?</strong>
+              <small>
+                Безопасно перепакует структуру файла локально. Сканы внутри PDF не перекодируются и могут не уменьшиться.
+              </small>
+              {sourceDoc?.optimization ? (
+                <small className={sourceDoc.optimization.reduced ? 'optimizationSaved' : ''}>
+                  Исходный PDF: {sourceDoc.optimization.reduced
+                    ? `${formatBytes(sourceDoc.optimization.sourceSize)} → ${formatBytes(sourceDoc.optimization.resultSize)}`
+                    : 'проверен, уменьшение невозможно без потери качества'}
+                </small>
+              ) : null}
+            </div>
+            <button
+              type="button"
+              className="secondary optimizePdfButton"
+              onClick={() => void handleOptimizePdfs()}
+              disabled={isOptimizingPdf || isProcessing || (!sourceDoc && targetDocs.length === 0)}
+            >
+              {isOptimizingPdf ? 'Оптимизирую…' : 'Оптимизировать PDF перед работой'}
+            </button>
+          </div>
 
           <div className="statusLine">{busyMessage ?? 'Готов к работе.'}</div>
         </section>
@@ -510,7 +615,7 @@ export default function App() {
               onSaveTemplate={handleSaveTemplate}
               onApplyTemplate={handleApplyTemplate}
               onExportPdf={handleExportPdf}
-              isProcessing={isProcessing}
+              isProcessing={isProcessing || isOptimizingPdf}
               sourceSize={sourceDoc?.fileSize ?? 0}
               outputSize={outputResults[previewIndex]?.size}
               outputTemplate={activeTemplateId ? templates.find((item) => item.id === activeTemplateId) ?? null : null}

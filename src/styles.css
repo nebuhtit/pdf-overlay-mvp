@@ -284,6 +284,37 @@ a {
   font-size: 0.88rem;
 }
 
+.pdfOptimization {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 14px;
+  padding: 14px;
+  border-radius: 18px;
+  background: rgba(15, 23, 42, 0.42);
+  border: 1px solid rgba(125, 211, 252, 0.2);
+}
+
+.pdfOptimization > div {
+  display: grid;
+  gap: 5px;
+}
+
+.pdfOptimization small {
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.optimizationSaved {
+  color: #86efac !important;
+}
+
+.optimizePdfButton {
+  flex: 0 0 auto;
+  max-width: 260px;
+}
+
 .resultList {
   display: grid;
   gap: 8px;
@@ -397,12 +428,68 @@ button:disabled {
   display: block;
   width: 100%;
   height: auto;
+  opacity: 0;
+}
+
+.pdfCanvas.isReady {
+  opacity: 1;
 }
 
 .overlayLayer {
   position: absolute;
   inset: 0;
   pointer-events: none;
+  visibility: hidden;
+}
+
+.overlayLayer.isReady {
+  visibility: visible;
+}
+
+.pageLoading {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 10px;
+  min-height: 320px;
+  padding: 24px;
+  color: var(--text);
+  text-align: center;
+  background:
+    radial-gradient(circle at center, rgba(14, 165, 233, 0.15), transparent 46%),
+    #111827;
+}
+
+.pageLoading small {
+  max-width: 34ch;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.pageLoading.isError {
+  background: rgba(69, 10, 10, 0.3);
+}
+
+.pageLoadingSpinner {
+  width: 34px;
+  height: 34px;
+  border: 3px solid rgba(148, 163, 184, 0.24);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: page-loading-spin 0.85s linear infinite;
+}
+
+.pageLoading.isError .pageLoadingSpinner {
+  display: none;
+}
+
+@keyframes page-loading-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .placementBox {
@@ -756,6 +843,16 @@ button:disabled {
     min-height: 104px;
     padding: 12px;
     border-radius: 16px;
+  }
+
+  .pdfOptimization {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .optimizePdfButton {
+    width: 100%;
+    max-width: none;
   }
 
   .uploadCard strong {

@@ -55,7 +55,7 @@ export function ControlPanel({
           <h3>Шаблон и экспорт</h3>
         </div>
         <button className={`toggle ${optimizeImages ? 'on' : ''}`} type="button" onClick={onToggleOptimize}>
-          {optimizeImages ? 'Оптимизация: вкл.' : 'Оптимизация: выкл.'}
+          {optimizeImages ? 'PNG: сжимать' : 'PNG: без сжатия'}
         </button>
       </div>
 

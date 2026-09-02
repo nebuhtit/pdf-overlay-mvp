@@ -49,6 +49,11 @@ export type PdfDocInfo = {
   fileSize: number;
   bytes: Uint8Array;
   pageMetrics: PageMetrics[];
+  optimization?: {
+    sourceSize: number;
+    resultSize: number;
+    reduced: boolean;
+  };
 };
 
 export type ExportResult = {

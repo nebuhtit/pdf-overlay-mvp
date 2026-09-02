@@ -41,6 +41,26 @@ export const loadPdfInfo = async (file: File): Promise<{ bytes: Uint8Array; page
   return { bytes, pageMetrics };
 };
 
+export const optimizePdfBytes = async (sourceBytes: Uint8Array) => {
+  const pdf = await PDFDocument.load(sourceBytes, { updateMetadata: false });
+  const savedBytes = await pdf.save({
+    useObjectStreams: true,
+    updateFieldAppearances: false,
+    objectsPerTick: 10,
+  });
+
+  const savedByteCount = sourceBytes.byteLength - savedBytes.byteLength;
+  const meaningfulReduction = Math.max(32 * 1024, sourceBytes.byteLength * 0.005);
+
+  // Re-saving can enlarge an already compact PDF or save only a meaningless
+  // amount. Retaining the byte-identical source avoids a needless second parse.
+  if (savedByteCount < meaningfulReduction) {
+    return { bytes: sourceBytes, reduced: false };
+  }
+
+  return { bytes: savedBytes, reduced: true };
+};
+
 export const renderPdfPage = async (
   pdfBytes: Uint8Array,
   pageIndex: number,
