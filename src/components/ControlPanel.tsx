@@ -215,7 +215,7 @@ export function ControlPanel({
           <strong>{outputSize ? formatBytes(outputSize) : '—'}</strong>
         </div>
         {reduction !== null ? (
-          <small>{formatPercent(reduction)} относительно исходника</small>
+          <small>{formatPercent(reduction)} относительно исходника{reduction > 0 ? '. Добавленные PNG могут увеличить PDF.' : ''}</small>
         ) : (
           <small>Браузерное уменьшение ограничено безопасной оптимизацией PNG и объектными потоками PDF.</small>
         )}

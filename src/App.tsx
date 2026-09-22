@@ -11,7 +11,7 @@ import { createZipBlob } from './lib/zip';
 import type { OverlayRole, PdfAsset, PdfDocInfo, Placement, TemplateRecord } from './types';
 import { formatBytes } from './lib/format';
 
-const APP_VERSION = '1.0.0';
+const APP_VERSION = '1.0.1';
 
 type ProcessedPdf = {
   sourceName: string;
@@ -260,6 +260,20 @@ export default function App() {
     setBusyMessage(`Шаблон переименован в «${nextName}».`);
   };
 
+  const handleToggleTemplateOptimization = (templateId: string, enabled: boolean) => {
+    const template = templates.find((item) => item.id === templateId);
+    if (!template || isProcessing) return;
+    const updated = { ...template, optimizeImages: enabled, updatedAt: new Date().toISOString() };
+    upsertTemplate(updated);
+    setTemplates(listTemplates());
+    if (templateId === activeTemplateId) setOptimizeImages(enabled);
+    if (templateId === quickTemplate?.id) setQuickTemplate(updated);
+    clearOutputResults();
+    setQuickMode(false);
+    setQuickExportReady(false);
+    setBusyMessage(`${enabled ? 'Облегчение результата включено' : 'Облегчение результата выключено'} для шаблона «${template.name}».`);
+  };
+
   const handleAddPlacement = (role: OverlayRole) => {
     if (!sourceDoc) return;
     rememberPlacements();
@@ -471,10 +485,7 @@ export default function App() {
             <span>Локально. Без сервера. {offlineReady ? 'Офлайн-кэш готов.' : 'Для iPhone и Mac.'}</span>
           </div>
           <h1>PDF overlay MVP</h1>
-          <p>
-            Загружайте PDF, ставьте печать и подпись на нужные страницы, сохраняйте шаблоны и применяйте их к
-            другим документам в браузере.
-          </p>
+          <p>Печать и подпись на PDF. Шаблоны и пакетный экспорт без отправки файлов на сервер.</p>
         </div>
       </header>
 
@@ -484,6 +495,7 @@ export default function App() {
           activeTemplateId={activeTemplateId}
           onSelect={handleSelectTemplate}
           onQuickProcess={handleQuickProcess}
+          onToggleOptimization={handleToggleTemplateOptimization}
           onRename={handleRenameTemplate}
           onDelete={handleDeleteTemplate}
           isProcessing={isProcessing}

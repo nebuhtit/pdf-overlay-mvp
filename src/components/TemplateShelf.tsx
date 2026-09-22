@@ -9,12 +9,13 @@ type Props = {
   activeTemplateId: string | null;
   onSelect: (template: TemplateRecord) => void;
   onQuickProcess: (template: TemplateRecord, files: File[]) => void;
+  onToggleOptimization: (templateId: string, enabled: boolean) => void;
   onRename: (templateId: string, name: string) => void;
   onDelete: (templateId: string) => void;
   isProcessing: boolean;
 };
 
-export function TemplateShelf({ templates, activeTemplateId, onSelect, onQuickProcess, onRename, onDelete, isProcessing }: Props) {
+export function TemplateShelf({ templates, activeTemplateId, onSelect, onQuickProcess, onToggleOptimization, onRename, onDelete, isProcessing }: Props) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draftName, setDraftName] = useState('');
 
@@ -79,7 +80,15 @@ export function TemplateShelf({ templates, activeTemplateId, onSelect, onQuickPr
                   </span>
                 </div>
                 <div className="templateRowFooter">
-                  <span>{template.optimizeImages ? 'Оптимизация включена' : 'Оптимизация выключена'}</span>
+                  <label className="templateOptimizeToggle">
+                    <input
+                      type="checkbox"
+                      checked={template.optimizeImages}
+                      disabled={isProcessing}
+                      onChange={(event) => onToggleOptimization(template.id, event.target.checked)}
+                    />
+                    <span>Облегчать итоговый PDF<small>Уменьшать PNG печати и подписи; сканы не сжимаются</small></span>
+                  </label>
                   <span>{formatBytes(new Blob([JSON.stringify(template)]).size)}</span>
                 </div>
                 <div className="templateActions">

@@ -11,6 +11,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
 
 const PDF_OPTIMIZE_MAX_IMAGE_EDGE = 1800;
 const PDF_OPTIMIZE_MOBILE_IMAGE_EDGE = 1000;
+const PRINT_PIXELS_PER_POINT = 300 / 72;
 const previewDocuments = new WeakMap<Uint8Array, Promise<pdfjsLib.PDFDocumentProxy>>();
 
 const getPdfJsDocument = async (bytes: Uint8Array) => {
@@ -99,21 +100,26 @@ const decodeImage = (dataUrl: string) =>
     image.src = dataUrl;
   });
 
-const scaleImageToMaxEdge = async (dataUrl: string) => {
+const scaleImageToFit = async (asset: PdfAsset, widthPoints: number, heightPoints: number) => {
+  const dataUrl = asset.dataUrl;
   const image = await decodeImage(dataUrl);
   const longest = Math.max(image.naturalWidth, image.naturalHeight);
   const mobile = window.matchMedia('(max-width: 720px), (pointer: coarse)').matches;
   const maxEdge = mobile ? PDF_OPTIMIZE_MOBILE_IMAGE_EDGE : PDF_OPTIMIZE_MAX_IMAGE_EDGE;
-  if (longest <= maxEdge) {
+  const printScale = Math.max(
+    (widthPoints * PRINT_PIXELS_PER_POINT) / image.naturalWidth,
+    (heightPoints * PRINT_PIXELS_PER_POINT) / image.naturalHeight,
+  );
+  const scale = Math.min(1, printScale, maxEdge / longest);
+  if (scale >= 1) {
     return {
       dataUrl,
       width: image.naturalWidth,
       height: image.naturalHeight,
-      byteSize: Math.round((dataUrl.length * 3) / 4),
+      byteSize: asset.byteSize,
     };
   }
 
-  const scale = maxEdge / longest;
   const width = Math.max(1, Math.round(image.naturalWidth * scale));
   const height = Math.max(1, Math.round(image.naturalHeight * scale));
   const canvas = document.createElement('canvas');
@@ -125,25 +131,41 @@ const scaleImageToMaxEdge = async (dataUrl: string) => {
       dataUrl,
       width: image.naturalWidth,
       height: image.naturalHeight,
-      byteSize: Math.round((dataUrl.length * 3) / 4),
+      byteSize: asset.byteSize,
     };
   }
+  context.imageSmoothingQuality = 'high';
   context.drawImage(image, 0, 0, width, height);
   const optimizedDataUrl = canvas.toDataURL('image/png');
+  const encoded = optimizedDataUrl.slice(optimizedDataUrl.indexOf(',') + 1);
+  const optimizedByteSize = Math.floor((encoded.length * 3) / 4) - (encoded.endsWith('==') ? 2 : encoded.endsWith('=') ? 1 : 0);
+  if (optimizedByteSize >= asset.byteSize) {
+    return { dataUrl, width: image.naturalWidth, height: image.naturalHeight, byteSize: asset.byteSize };
+  }
   return {
     dataUrl: optimizedDataUrl,
     width,
     height,
-    byteSize: Math.round((optimizedDataUrl.length * 3) / 4),
+    byteSize: optimizedByteSize,
   };
 };
 
-export const optimizeAssets = async (assets: Record<'stamp' | 'signature', PdfAsset | null>) => {
+export const optimizeAssets = async (
+  assets: Record<'stamp' | 'signature', PdfAsset | null>,
+  placements: Placement[],
+  pageMetrics: PageMetrics[],
+) => {
   const entries = await Promise.all(
     (Object.keys(assets) as Array<'stamp' | 'signature'>).map(async (role) => {
       const asset = assets[role];
       if (!asset) return [role, null] as const;
-      const optimized = await scaleImageToMaxEdge(asset.dataUrl);
+      const rolePlacements = placements.filter((placement) => placement.role === role);
+      if (rolePlacements.length === 0) return [role, asset] as const;
+      const widthPoints = rolePlacements.reduce((maximum, placement) =>
+        Math.max(maximum, placement.width * pageMetrics[placement.pageIndex].width), 0);
+      const heightPoints = rolePlacements.reduce((maximum, placement) =>
+        Math.max(maximum, placement.height * pageMetrics[placement.pageIndex].height), 0);
+      const optimized = await scaleImageToFit(asset, widthPoints, heightPoints);
       return [
         role,
         {
@@ -170,19 +192,22 @@ export const applyTemplate = async (
   optimizeImages: boolean,
 ): Promise<ExportResult> => {
   const pdf = await PDFDocument.load(sourceBytes);
-  const workingAssets = optimizeImages ? await optimizeAssets(assets) : assets;
+  const applicablePlacements = placements.filter((placement) =>
+    placement.visible && placement.width > 0 && placement.height > 0 &&
+    placement.pageIndex >= 0 && placement.pageIndex < pdf.getPageCount() &&
+    Boolean(pageMetrics[placement.pageIndex]) && Boolean(assets[placement.role]));
+  const workingAssets = optimizeImages ? await optimizeAssets(assets, applicablePlacements, pageMetrics) : assets;
   const embeddedAssets: Record<'stamp' | 'signature', PDFImage | null> = { stamp: null, signature: null };
 
   for (const role of ['stamp', 'signature'] as const) {
+    if (!applicablePlacements.some((placement) => placement.role === role)) continue;
     const asset = workingAssets[role];
     if (!asset) continue;
     const imageBytes = await bytesFromDataUrl(selectAssetData(asset));
     embeddedAssets[role] = await pdf.embedPng(imageBytes);
   }
 
-  for (const placement of placements) {
-    if (!placement.visible) continue;
-    if (placement.pageIndex < 0 || placement.pageIndex >= pdf.getPageCount()) continue;
+  for (const placement of applicablePlacements) {
     const page = pdf.getPage(placement.pageIndex);
     if (!page) continue;
 
