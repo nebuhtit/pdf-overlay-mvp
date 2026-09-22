@@ -6,12 +6,12 @@ import { TemplateShelf } from './components/TemplateShelf';
 import { applyTemplate, loadPdfInfo, optimizePdfBytes } from './lib/pdf';
 import { createDefaultPlacement, clonePlacementForPage } from './lib/placements';
 import { deleteTemplate, getOptimizePdfPreference, listTemplates, setOptimizePdfPreference, upsertTemplate } from './lib/storage';
-import { downloadBlob, loadImageSize, makeId, readFileAsDataUrl } from './lib/files';
+import { downloadBlob, formatExportTimestamp, loadImageSize, makeId, readFileAsDataUrl } from './lib/files';
 import { createZipBlob } from './lib/zip';
 import type { OverlayRole, PdfAsset, PdfDocInfo, Placement, TemplateRecord } from './types';
 import { formatBytes } from './lib/format';
 
-const APP_VERSION = '1.0.1';
+const APP_VERSION = '1.0.2';
 
 type ProcessedPdf = {
   sourceName: string;
@@ -425,18 +425,19 @@ export default function App() {
 
   const downloadResults = async (results: ProcessedPdf[]) => {
     if (results.length === 0) return;
+    const timestamp = formatExportTimestamp();
     if (results.length === 1) {
       const result = results[0];
-      downloadBlob(result.blob, `${result.sourceName.replace(/\.pdf$/i, '')}-готово.pdf`);
+      downloadBlob(result.blob, `${result.sourceName.replace(/\.pdf$/i, '')}-готово-${timestamp}.pdf`);
       setBusyMessage('Сохранение готового PDF запущено. Проверьте загрузки браузера.');
       return;
     }
     const entries = results.map((result) => ({
       blob: result.blob,
-      fileName: `${result.sourceName.replace(/\.pdf$/i, '')}-готово.pdf`,
+      fileName: `${result.sourceName.replace(/\.pdf$/i, '')}-готово-${timestamp}.pdf`,
     }));
     const archive = await createZipBlob(entries);
-    downloadBlob(archive, `готовые-pdf-${new Date().toISOString().slice(0, 10)}.zip`);
+    downloadBlob(archive, `готовые-pdf-${timestamp}.zip`);
     setBusyMessage(`Сохранение ZIP с ${entries.length} PDF запущено. Проверьте загрузки браузера.`);
   };
 

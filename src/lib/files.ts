@@ -38,5 +38,10 @@ export const downloadBlob = (blob: Blob, fileName: string) => {
   window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
 };
 
+export const formatExportTimestamp = (date = new Date()) => {
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}_${pad(date.getHours())}-${pad(date.getMinutes())}-${pad(date.getSeconds())}`;
+};
+
 export const makeId = (prefix: string) =>
   `${prefix}-${Math.random().toString(36).slice(2, 8)}-${Date.now().toString(36)}`;
