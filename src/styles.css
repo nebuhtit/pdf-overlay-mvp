@@ -115,6 +115,25 @@ a {
   line-height: 1.55;
 }
 
+.offlineRetry {
+  margin-top: 12px;
+}
+
+.offlineHelp {
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.offlineHelp summary {
+  cursor: pointer;
+  width: fit-content;
+}
+
+.offlineHelp p {
+  margin-top: 8px;
+}
+
 .eyebrow,
 .panelMeta,
 .stageMeta,

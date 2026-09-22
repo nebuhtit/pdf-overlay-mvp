@@ -10,8 +10,9 @@ import { downloadBlob, formatExportTimestamp, loadImageSize, makeId, readFileAsD
 import { createZipBlob } from './lib/zip';
 import type { OverlayRole, PdfAsset, PdfDocInfo, Placement, TemplateRecord } from './types';
 import { formatBytes } from './lib/format';
+import { checkOfflineReady } from './lib/offline';
 
-const APP_VERSION = '1.0.2';
+const APP_VERSION = '1.0.3';
 
 type ProcessedPdf = {
   sourceName: string;
@@ -59,22 +60,29 @@ export default function App() {
   const [previewIndex, setPreviewIndex] = useState(0);
   const [batchErrors, setBatchErrors] = useState<string[]>([]);
   const [activeTemplateId, setActiveTemplateId] = useState<string | null>(null);
-  const [offlineReady, setOfflineReady] = useState(false);
+  const [offlineStatus, setOfflineStatus] = useState<'checking' | 'ready' | 'unavailable'>('checking');
   const [compactMode, setCompactMode] = useState(() => window.matchMedia('(max-width: 720px), (pointer: coarse)').matches);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isExportingAll, setIsExportingAll] = useState(false);
 
   useEffect(() => {
-    if (import.meta.env.PROD && 'serviceWorker' in navigator) {
-      navigator.serviceWorker
-        .register(`${import.meta.env.BASE_URL}sw.js`, { updateViaCache: 'none' })
-        .then(async (registration) => {
-          await registration.update();
-          await navigator.serviceWorker.ready;
-          setOfflineReady(true);
-        })
-        .catch(() => setOfflineReady(false));
-    }
+    let mounted = true;
+    let checkNumber = 0;
+    const check = () => {
+      const currentCheck = ++checkNumber;
+      if (mounted) setOfflineStatus('checking');
+      void checkOfflineReady().then((ready) => {
+        if (mounted && currentCheck === checkNumber) setOfflineStatus(ready ? 'ready' : 'unavailable');
+      });
+    };
+    check();
+    navigator.serviceWorker?.addEventListener('controllerchange', check);
+    window.addEventListener('online', check);
+    return () => {
+      mounted = false;
+      navigator.serviceWorker?.removeEventListener('controllerchange', check);
+      window.removeEventListener('online', check);
+    };
   }, []);
 
   useEffect(() => {
@@ -483,10 +491,20 @@ export default function App() {
         <div className="heroCopy">
           <div className="eyebrow versionLine">
             <span className="versionBadge">Версия {APP_VERSION}</span>
-            <span>Локально. Без сервера. {offlineReady ? 'Офлайн-кэш готов.' : 'Для iPhone и Mac.'}</span>
+            <span>Локально. Без сервера. {offlineStatus === 'ready' ? 'Офлайн готов.' : offlineStatus === 'checking' ? 'Готовлю офлайн...' : 'Офлайн не готов.'}</span>
           </div>
           <h1>PDF overlay MVP</h1>
           <p>Печать и подпись на PDF. Шаблоны и пакетный экспорт без отправки файлов на сервер.</p>
+          {offlineStatus === 'unavailable' && import.meta.env.PROD ? (
+            <button type="button" className="offlineRetry" onClick={() => {
+              setOfflineStatus('checking');
+              void checkOfflineReady().then((ready) => setOfflineStatus(ready ? 'ready' : 'unavailable'));
+            }}>Повторить сохранение для офлайна</button>
+          ) : null}
+          <details className="offlineHelp">
+            <summary>Как работать на iPhone без интернета</summary>
+            <p>Откройте сайт в Safari, добавьте его на экран «Домой», затем откройте приложение с иконки при наличии сети и дождитесь «Офлайн готов». После этого PDF можно обрабатывать без сети. Шаблоны в Safari и приложении с экрана «Домой» могут храниться отдельно.</p>
+          </details>
         </div>
       </header>
 
