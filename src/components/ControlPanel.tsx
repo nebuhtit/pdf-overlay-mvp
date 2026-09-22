@@ -92,11 +92,11 @@ export function ControlPanel({
       </div>
 
       {activePlacement ? (
-        <div className="inspector">
-          <div className="inspectorHeader">
-            <strong>{getPlacementLabel(activePlacement.role)}</strong>
-            <span>Стр. {activePlacement.pageIndex + 1}</span>
-          </div>
+        <details className="inspector">
+          <summary className="inspectorHeader">
+            <strong>{getPlacementLabel(activePlacement.role)} · Стр. {activePlacement.pageIndex + 1}</strong>
+            <span>Положение и размер</span>
+          </summary>
           <div className="grid2">
             <label className="field">
               <span>X</span>
@@ -173,7 +173,7 @@ export function ControlPanel({
           <button type="button" className="removePlacementButton" onClick={() => onRemovePlacement(activePlacement.id)}>
             Удалить {activePlacement.role === 'stamp' ? 'печать' : 'подпись'} с этой страницы
           </button>
-        </div>
+        </details>
       ) : (
         <p className="muted">Выберите блок на странице, чтобы менять координаты и размер.</p>
       )}

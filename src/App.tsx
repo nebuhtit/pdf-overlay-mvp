@@ -3,15 +3,15 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ControlPanel } from './components/ControlPanel';
 import { PageCanvas } from './components/PageCanvas';
 import { TemplateShelf } from './components/TemplateShelf';
-import { applyTemplate, loadPdfInfo, optimizePdfBytes, releasePdfPreview } from './lib/pdf';
+import { applyTemplate, loadPdfInfo, optimizePdfBytes } from './lib/pdf';
 import { createDefaultPlacement, clonePlacementForPage } from './lib/placements';
-import { deleteTemplate, listTemplates, upsertTemplate } from './lib/storage';
+import { deleteTemplate, getOptimizePdfPreference, listTemplates, setOptimizePdfPreference, upsertTemplate } from './lib/storage';
 import { downloadBlob, loadImageSize, makeId, readFileAsDataUrl } from './lib/files';
 import { createZipBlob } from './lib/zip';
 import type { OverlayRole, PdfAsset, PdfDocInfo, Placement, TemplateRecord } from './types';
 import { formatBytes } from './lib/format';
 
-const APP_VERSION = '0.8.0';
+const APP_VERSION = '0.9.0';
 
 const ensureActivePlacement = (placements: Placement[], pageIndex: number) => {
   const currentPagePlacements = placements.filter((placement) => placement.pageIndex === pageIndex);
@@ -40,6 +40,7 @@ export default function App() {
   const [selectedPageIndex, setSelectedPageIndex] = useState(0);
   const [activePlacementId, setActivePlacementId] = useState<string | null>(null);
   const [optimizeImages, setOptimizeImages] = useState(true);
+  const [optimizePdf, setOptimizePdf] = useState(getOptimizePdfPreference);
   const [busyMessage, setBusyMessage] = useState<string | null>(null);
   const [outputResults, setOutputResults] = useState<Array<{
     sourceName: string;
@@ -54,7 +55,6 @@ export default function App() {
   const [offlineReady, setOfflineReady] = useState(false);
   const [compactMode, setCompactMode] = useState(() => window.matchMedia('(max-width: 720px), (pointer: coarse)').matches);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [isOptimizingPdf, setIsOptimizingPdf] = useState(false);
   const [isExportingAll, setIsExportingAll] = useState(false);
 
   useEffect(() => {
@@ -178,73 +178,6 @@ export default function App() {
     setPreviewIndex(0);
   };
 
-  const handleOptimizePdfs = async () => {
-    if (isOptimizingPdf || isProcessing) return;
-    const total = (sourceDoc ? 1 : 0) + targetDocs.length;
-    if (total === 0) {
-      setBusyMessage('Сначала загрузите хотя бы один PDF.');
-      return;
-    }
-
-    setIsOptimizingPdf(true);
-    clearOutputResults();
-    const errors: string[] = [];
-    let completed = 0;
-    let reducedCount = 0;
-    let bytesSaved = 0;
-
-    const optimizeDoc = async (doc: PdfDocInfo) => {
-      setBusyMessage(`Оптимизирую PDF: ${completed + 1} из ${total} — ${doc.name}`);
-      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-      try {
-        const sourceSize = doc.bytes.byteLength;
-        const result = await optimizePdfBytes(doc.bytes);
-        const resultSize = result.bytes.byteLength;
-        if (result.reduced) {
-          reducedCount += 1;
-          bytesSaved += sourceSize - resultSize;
-        }
-        return {
-          ...doc,
-          bytes: result.bytes,
-          fileSize: resultSize,
-          optimization: { sourceSize, resultSize, reduced: result.reduced },
-        };
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'неизвестная ошибка';
-        errors.push(`${doc.name}: оптимизация не выполнена — ${message}`);
-        return doc;
-      } finally {
-        completed += 1;
-      }
-    };
-
-    try {
-      if (sourceDoc) {
-        const optimizedSource = await optimizeDoc(sourceDoc);
-        if (optimizedSource.bytes !== sourceDoc.bytes) releasePdfPreview(sourceDoc.bytes);
-        setSourceDoc(optimizedSource);
-      }
-
-      const optimizedTargets: PdfDocInfo[] = [];
-      for (const doc of targetDocs) {
-        optimizedTargets.push(await optimizeDoc(doc));
-      }
-      setTargetDocs(optimizedTargets);
-      setBatchErrors(errors);
-
-      if (reducedCount > 0) {
-        setBusyMessage(`Оптимизация готова: уменьшено ${reducedCount} из ${total}, сэкономлено ${formatBytes(bytesSaved)}.`);
-      } else if (errors.length > 0) {
-        setBusyMessage(`Оптимизация завершена с ошибками: ${errors.length}. Исходные PDF сохранены.`);
-      } else {
-        setBusyMessage('Проверено: PDF уже компактны. Оставлены исходные файлы без увеличения размера.');
-      }
-    } finally {
-      setIsOptimizingPdf(false);
-    }
-  };
-
   const loadAsset = async (file: File, role: OverlayRole) => {
     const dataUrl = await readFileAsDataUrl(file);
     const size = await loadImageSize(dataUrl);
@@ -310,6 +243,16 @@ export default function App() {
     }
   };
 
+  const handleRenameTemplate = (templateId: string, name: string) => {
+    const template = templates.find((item) => item.id === templateId);
+    const nextName = name.trim();
+    if (!template || !nextName) return;
+    upsertTemplate({ ...template, name: nextName, updatedAt: new Date().toISOString() });
+    setTemplates(listTemplates());
+    if (templateId === activeTemplateId) setTemplateName(nextName);
+    setBusyMessage(`Шаблон переименован в «${nextName}».`);
+  };
+
   const handleAddPlacement = (role: OverlayRole) => {
     if (!sourceDoc) return;
     rememberPlacements();
@@ -371,14 +314,27 @@ export default function App() {
     outputResults.forEach((item) => URL.revokeObjectURL(item.blobUrl));
     const nextResults = [];
     const errors: string[] = [];
+    const warnings: string[] = [];
     for (let index = 0; index < docs.length; index += 1) {
       try {
         const doc = docs[index];
         await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-        const result = await applyTemplate(doc.bytes, doc.pageMetrics, placements, assets, optimizeImages);
+        let bytes = doc.bytes;
+        if (optimizePdf) {
+          setBusyMessage(`Оптимизирую PDF: ${index + 1} из ${docs.length} — ${doc.name}`);
+          await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+          try {
+            bytes = (await optimizePdfBytes(doc.bytes)).bytes;
+          } catch (error) {
+            const message = error instanceof Error ? error.message : 'неизвестная ошибка';
+            warnings.push(`${doc.name}: оптимизация не выполнена (${message}); использован исходный PDF.`);
+          }
+        }
+        setBusyMessage(`Обрабатываю PDF: ${index + 1} из ${docs.length} — ${doc.name}`);
+        const result = await applyTemplate(bytes, doc.pageMetrics, placements, assets, optimizeImages);
         nextResults.push({
           sourceName: doc.name,
-          sourceSize: result.sourceSize,
+          sourceSize: doc.fileSize,
           blobUrl: URL.createObjectURL(result.blob),
           size: result.outputSize,
           blob: result.blob,
@@ -390,10 +346,10 @@ export default function App() {
       setBusyMessage(`Обрабатываю PDF: ${index + 1} из ${docs.length}...`);
     }
     setOutputResults(nextResults);
-    setBatchErrors(errors);
+    setBatchErrors([...errors, ...warnings]);
     setPreviewIndex(0);
     setIsProcessing(false);
-    setBusyMessage(`Готово: ${nextResults.length} из ${docs.length}${errors.length ? `, ошибок: ${errors.length}` : ''}.`);
+    setBusyMessage(`Готово: ${nextResults.length} из ${docs.length}${errors.length ? `, ошибок: ${errors.length}` : ''}${warnings.length ? `, предупреждений: ${warnings.length}` : ''}.`);
     return nextResults;
   };
 
@@ -415,7 +371,7 @@ export default function App() {
   };
 
   const handleExportPdf = async () => {
-    if (isProcessing || isOptimizingPdf || isExportingAll) return;
+    if (isProcessing || isExportingAll) return;
     const results = await handleApplyTemplate();
     try {
       await downloadResults(results);
@@ -539,13 +495,6 @@ export default function App() {
                   <div>
                     <strong>{doc.name}</strong>
                     <small>{doc.pageMetrics.length} стр. · {formatBytes(doc.fileSize)}</small>
-                    {doc.optimization ? (
-                      <small className={doc.optimization.reduced ? 'optimizationSaved' : ''}>
-                        {doc.optimization.reduced
-                          ? `Оптимизирован: ${formatBytes(doc.optimization.sourceSize)} → ${formatBytes(doc.optimization.resultSize)}`
-                          : 'Проверен: исходник уже компактнее'}
-                      </small>
-                    ) : null}
                   </div>
                   <button type="button" aria-label={`Удалить ${doc.name}`} onClick={() => removeTargetPdf(index)}>Удалить</button>
                 </div>
@@ -560,27 +509,21 @@ export default function App() {
           ) : null}
 
           <div className="pdfOptimization">
-            <div>
-              <strong>Тяжёлый или странный PDF?</strong>
-              <small>
-                Безопасно перепакует структуру файла локально. Сканы внутри PDF не перекодируются и могут не уменьшиться.
-              </small>
-              {sourceDoc?.optimization ? (
-                <small className={sourceDoc.optimization.reduced ? 'optimizationSaved' : ''}>
-                  Исходный PDF: {sourceDoc.optimization.reduced
-                    ? `${formatBytes(sourceDoc.optimization.sourceSize)} → ${formatBytes(sourceDoc.optimization.resultSize)}`
-                    : 'проверен, уменьшение невозможно без потери качества'}
-                </small>
-              ) : null}
-            </div>
-            <button
-              type="button"
-              className="secondary optimizePdfButton"
-              onClick={() => void handleOptimizePdfs()}
-              disabled={isOptimizingPdf || isProcessing || (!sourceDoc && targetDocs.length === 0)}
-            >
-              {isOptimizingPdf ? 'Оптимизирую…' : 'Оптимизировать PDF перед работой'}
-            </button>
+            <label className="pdfOptimizeToggle">
+              <input
+                type="checkbox"
+                checked={optimizePdf}
+                disabled={isProcessing}
+                onChange={(event) => {
+                  const enabled = event.target.checked;
+                  setOptimizePdf(enabled);
+                  setOptimizePdfPreference(enabled);
+                  clearOutputResults();
+                }}
+              />
+              <span>Оптимизировать PDF перед обработкой</span>
+            </label>
+            <small>Выбор сохраняется на этом устройстве. Сканы внутри PDF не перекодируются и могут не уменьшиться.</small>
           </div>
 
           <div className="statusLine">{busyMessage ?? 'Готов к работе.'}</div>
@@ -642,7 +585,7 @@ export default function App() {
               onSaveTemplate={handleSaveTemplate}
               onApplyTemplate={handleApplyTemplate}
               onExportPdf={handleExportPdf}
-              isProcessing={isProcessing || isOptimizingPdf}
+              isProcessing={isProcessing}
               sourceSize={sourceDoc?.fileSize ?? 0}
               outputSize={outputResults[previewIndex]?.size}
               outputTemplate={activeTemplateId ? templates.find((item) => item.id === activeTemplateId) ?? null : null}
@@ -653,6 +596,7 @@ export default function App() {
             templates={templates}
             activeTemplateId={activeTemplateId}
             onSelect={handleSelectTemplate}
+            onRename={handleRenameTemplate}
             onDelete={handleDeleteTemplate}
           />
 

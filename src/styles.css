@@ -264,10 +264,8 @@ a {
 }
 
 .pdfOptimization {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
+  display: grid;
+  gap: 8px;
   margin-top: 14px;
   padding: 14px;
   border-radius: 18px;
@@ -275,23 +273,25 @@ a {
   border: 1px solid rgba(125, 211, 252, 0.2);
 }
 
-.pdfOptimization > div {
-  display: grid;
-  gap: 5px;
+.pdfOptimizeToggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.pdfOptimizeToggle input {
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  flex: 0 0 auto;
+  accent-color: #38bdf8;
 }
 
 .pdfOptimization small {
   color: var(--muted);
   line-height: 1.4;
-}
-
-.optimizationSaved {
-  color: #86efac !important;
-}
-
-.optimizePdfButton {
-  flex: 0 0 auto;
-  max-width: 260px;
 }
 
 .resultList {
@@ -691,6 +691,28 @@ button:disabled {
   border: 1px solid rgba(148, 163, 184, 0.16);
 }
 
+.inspectorHeader {
+  margin-bottom: 0;
+  cursor: pointer;
+  list-style: none;
+}
+
+.inspectorHeader::-webkit-details-marker {
+  display: none;
+}
+
+.inspectorHeader span::after {
+  content: ' ▾';
+}
+
+.inspector[open] .inspectorHeader {
+  margin-bottom: 14px;
+}
+
+.inspector[open] .inspectorHeader span::after {
+  content: ' ▴';
+}
+
 .grid2 {
   display: grid;
   gap: 12px;
@@ -761,6 +783,47 @@ button:disabled {
   display: flex;
   justify-content: space-between;
   gap: 10px;
+}
+
+.templateRowTop {
+  align-items: start;
+}
+
+.renameTemplateForm,
+.templateActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.renameTemplateForm input {
+  min-width: 0;
+  max-width: 100%;
+  padding: 9px 11px;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  background: #0f172a;
+  color: var(--text);
+}
+
+.renameTemplateForm button,
+.templateActions button {
+  min-height: 40px;
+  padding: 8px 11px;
+  border-radius: 10px;
+  color: var(--text);
+  background: rgba(148, 163, 184, 0.14);
+  border: 1px solid rgba(148, 163, 184, 0.24);
+}
+
+.renameTemplateForm button:disabled {
+  opacity: 0.5;
+}
+
+.templateActions .ghostDanger {
+  color: #fecaca;
+  background: rgba(127, 29, 29, 0.3);
+  border-color: rgba(239, 68, 68, 0.24);
 }
 
 .ghostDanger {
@@ -836,16 +899,6 @@ button:disabled {
     min-height: 104px;
     padding: 12px;
     border-radius: 16px;
-  }
-
-  .pdfOptimization {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .optimizePdfButton {
-    width: 100%;
-    max-width: none;
   }
 
   .uploadCard strong {

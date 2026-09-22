@@ -1,6 +1,23 @@
 import type { TemplateRecord } from '../types';
 
 const TEMPLATE_STORAGE_KEY = 'pdf-overlay-mvp.templates.v1';
+const OPTIMIZE_PDF_STORAGE_KEY = 'pdf-overlay-mvp.optimize-pdf.v1';
+
+export const getOptimizePdfPreference = (): boolean => {
+  try {
+    return localStorage.getItem(OPTIMIZE_PDF_STORAGE_KEY) !== 'false';
+  } catch {
+    return true;
+  }
+};
+
+export const setOptimizePdfPreference = (enabled: boolean) => {
+  try {
+    localStorage.setItem(OPTIMIZE_PDF_STORAGE_KEY, String(enabled));
+  } catch {
+    // Private browsing may reject persistent storage; keep the current session usable.
+  }
+};
 
 type SavedTemplates = {
   templates: TemplateRecord[];
