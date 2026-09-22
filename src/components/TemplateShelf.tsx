@@ -8,11 +8,13 @@ type Props = {
   templates: TemplateRecord[];
   activeTemplateId: string | null;
   onSelect: (template: TemplateRecord) => void;
+  onQuickProcess: (template: TemplateRecord, files: File[]) => void;
   onRename: (templateId: string, name: string) => void;
   onDelete: (templateId: string) => void;
+  isProcessing: boolean;
 };
 
-export function TemplateShelf({ templates, activeTemplateId, onSelect, onRename, onDelete }: Props) {
+export function TemplateShelf({ templates, activeTemplateId, onSelect, onQuickProcess, onRename, onDelete, isProcessing }: Props) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draftName, setDraftName] = useState('');
 
@@ -36,6 +38,7 @@ export function TemplateShelf({ templates, activeTemplateId, onSelect, onRename,
         </div>
         <div className="panelMeta">{templates.length} шт.</div>
       </div>
+      {templates.length > 0 ? <p className="templateHint">Нажмите ⚡ и выберите файлы: для одного запустится скачивание PDF, для нескольких — ZIP.</p> : null}
       <div className="templateList">
         {templates.length === 0 ? (
           <p className="muted">Сохранённые шаблоны появятся здесь. Всё хранится локально.</p>
@@ -80,6 +83,21 @@ export function TemplateShelf({ templates, activeTemplateId, onSelect, onRename,
                   <span>{formatBytes(new Blob([JSON.stringify(template)]).size)}</span>
                 </div>
                 <div className="templateActions">
+                  <label className={`quickTemplateAction ${isProcessing ? 'disabled' : ''}`}>
+                    <span aria-hidden="true">⚡</span> Обработать PDF
+                    <input
+                      type="file"
+                      accept="application/pdf,.pdf"
+                      multiple
+                      disabled={isProcessing}
+                      aria-label={`Быстрая обработка по шаблону ${template.name}`}
+                      onChange={(event) => {
+                        const files = Array.from(event.currentTarget.files ?? []);
+                        event.currentTarget.value = '';
+                        if (files.length > 0) onQuickProcess(template, files);
+                      }}
+                    />
+                  </label>
                   <button type="button" onClick={() => onSelect(template)}>Выбрать</button>
                   <button type="button" onClick={() => beginRename(template)}>Переименовать</button>
                   <button className="ghostDanger" type="button" onClick={() => onDelete(template.id)}>Удалить</button>

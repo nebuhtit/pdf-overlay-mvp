@@ -11,7 +11,17 @@ import { createZipBlob } from './lib/zip';
 import type { OverlayRole, PdfAsset, PdfDocInfo, Placement, TemplateRecord } from './types';
 import { formatBytes } from './lib/format';
 
-const APP_VERSION = '0.9.0';
+const APP_VERSION = '1.0.0';
+
+type ProcessedPdf = {
+  sourceName: string;
+  sourceSize: number;
+  blobUrl: string;
+  size: number;
+  blob: Blob;
+};
+
+type ProcessingTemplate = Pick<TemplateRecord, 'placements' | 'assets' | 'optimizeImages'>;
 
 const ensureActivePlacement = (placements: Placement[], pageIndex: number) => {
   const currentPagePlacements = placements.filter((placement) => placement.pageIndex === pageIndex);
@@ -42,13 +52,10 @@ export default function App() {
   const [optimizeImages, setOptimizeImages] = useState(true);
   const [optimizePdf, setOptimizePdf] = useState(getOptimizePdfPreference);
   const [busyMessage, setBusyMessage] = useState<string | null>(null);
-  const [outputResults, setOutputResults] = useState<Array<{
-    sourceName: string;
-    sourceSize: number;
-    blobUrl: string;
-    size: number;
-    blob: Blob;
-  }>>([]);
+  const [outputResults, setOutputResults] = useState<ProcessedPdf[]>([]);
+  const [quickMode, setQuickMode] = useState(false);
+  const [quickTemplate, setQuickTemplate] = useState<TemplateRecord | null>(null);
+  const [quickExportReady, setQuickExportReady] = useState(false);
   const [previewIndex, setPreviewIndex] = useState(0);
   const [batchErrors, setBatchErrors] = useState<string[]>([]);
   const [activeTemplateId, setActiveTemplateId] = useState<string | null>(null);
@@ -302,18 +309,11 @@ export default function App() {
     setPlacements((current) => copyPlacements(current, sourcePageIndex, targetPageIndex));
   };
 
-  const handleApplyTemplate = async () => {
-    if (isProcessing) return [];
-    const docs = targetDocs.length > 0 ? targetDocs : sourceDoc ? [sourceDoc] : [];
-    if (docs.length === 0) {
-      setBusyMessage('Сначала загрузите PDF.');
-      return [];
-    }
-    setIsProcessing(true);
+  const processDocs = async (docs: PdfDocInfo[], template: ProcessingTemplate, initialErrors: string[] = []) => {
     setBusyMessage(`Обрабатываю PDF: 0 из ${docs.length}...`);
     outputResults.forEach((item) => URL.revokeObjectURL(item.blobUrl));
-    const nextResults = [];
-    const errors: string[] = [];
+    const nextResults: ProcessedPdf[] = [];
+    const errors = [...initialErrors];
     const warnings: string[] = [];
     for (let index = 0; index < docs.length; index += 1) {
       try {
@@ -331,7 +331,7 @@ export default function App() {
           }
         }
         setBusyMessage(`Обрабатываю PDF: ${index + 1} из ${docs.length} — ${doc.name}`);
-        const result = await applyTemplate(bytes, doc.pageMetrics, placements, assets, optimizeImages);
+        const result = await applyTemplate(bytes, doc.pageMetrics, template.placements, template.assets, template.optimizeImages);
         nextResults.push({
           sourceName: doc.name,
           sourceSize: doc.fileSize,
@@ -348,12 +348,68 @@ export default function App() {
     setOutputResults(nextResults);
     setBatchErrors([...errors, ...warnings]);
     setPreviewIndex(0);
-    setIsProcessing(false);
-    setBusyMessage(`Готово: ${nextResults.length} из ${docs.length}${errors.length ? `, ошибок: ${errors.length}` : ''}${warnings.length ? `, предупреждений: ${warnings.length}` : ''}.`);
+    setBusyMessage(`Готово: ${nextResults.length} из ${docs.length + initialErrors.length}${errors.length ? `, ошибок: ${errors.length}` : ''}${warnings.length ? `, предупреждений: ${warnings.length}` : ''}.`);
     return nextResults;
   };
 
-  const downloadResults = async (results: typeof outputResults) => {
+  const handleApplyTemplate = async () => {
+    if (isProcessing) return [];
+    const docs = targetDocs.length > 0 ? targetDocs : sourceDoc ? [sourceDoc] : [];
+    if (docs.length === 0) {
+      setBusyMessage('Сначала загрузите PDF.');
+      return [];
+    }
+    setQuickMode(false);
+    setQuickTemplate(null);
+    setQuickExportReady(false);
+    setIsProcessing(true);
+    try {
+      return await processDocs(docs, { placements, assets, optimizeImages });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleQuickProcess = async (template: TemplateRecord, files: File[]) => {
+    if (isProcessing || files.length === 0) return;
+    setQuickMode(true);
+    setQuickTemplate(template);
+    setQuickExportReady(false);
+    clearOutputResults();
+    setBatchErrors([]);
+    setIsProcessing(true);
+    const docs: PdfDocInfo[] = [];
+    const readErrors: string[] = [];
+    try {
+      for (let index = 0; index < files.length; index += 1) {
+        setBusyMessage(`Читаю PDF для шаблона «${template.name}»: ${index + 1} из ${files.length}...`);
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+        try {
+          docs.push(await readPdf(files[index]));
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'не удалось прочитать PDF';
+          readErrors.push(`${files[index].name}: ${message}`);
+        }
+      }
+      if (docs.length === 0) {
+        setBatchErrors(readErrors);
+        setBusyMessage('Не удалось открыть выбранные PDF.');
+        return;
+      }
+      const results = await processDocs(docs, template, readErrors);
+      if (results.length === 0) return;
+      await downloadResults(results);
+      setQuickExportReady(true);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'неизвестная ошибка';
+      setBusyMessage(`Автоматический экспорт не начался: ${message}. Готовые файлы можно скачать ниже.`);
+      setQuickExportReady(true);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const downloadResults = async (results: ProcessedPdf[]) => {
     if (results.length === 0) return;
     if (results.length === 1) {
       const result = results[0];
@@ -423,6 +479,27 @@ export default function App() {
       </header>
 
       <main className="layout">
+        <TemplateShelf
+          templates={templates}
+          activeTemplateId={activeTemplateId}
+          onSelect={handleSelectTemplate}
+          onQuickProcess={handleQuickProcess}
+          onRename={handleRenameTemplate}
+          onDelete={handleDeleteTemplate}
+          isProcessing={isProcessing}
+        />
+        {quickMode ? (
+          <div className="quickFeedback" role="status">
+            {quickTemplate ? <strong>Шаблон: {quickTemplate.name}</strong> : null}
+            <span>{busyMessage ?? 'Готов к быстрой обработке.'}</span>
+            {quickExportReady && outputResults.length > 0 ? (
+              <button type="button" onClick={() => void handleExportAll()} disabled={isProcessing || isExportingAll}>
+                Скачать ещё раз {outputResults.length > 1 ? `(${outputResults.length} PDF в ZIP)` : 'PDF'}
+              </button>
+            ) : null}
+            {batchErrors.length > 0 ? <small>{batchErrors.join(' · ')}</small> : null}
+          </div>
+        ) : null}
         <section className="panel uploads">
           <div className="panelHeader">
             <div>
@@ -586,19 +663,11 @@ export default function App() {
               onApplyTemplate={handleApplyTemplate}
               onExportPdf={handleExportPdf}
               isProcessing={isProcessing}
-              sourceSize={sourceDoc?.fileSize ?? 0}
+              sourceSize={quickMode ? outputResults[previewIndex]?.sourceSize ?? 0 : sourceDoc?.fileSize ?? 0}
               outputSize={outputResults[previewIndex]?.size}
-              outputTemplate={activeTemplateId ? templates.find((item) => item.id === activeTemplateId) ?? null : null}
+              outputTemplate={quickMode ? quickTemplate : activeTemplateId ? templates.find((item) => item.id === activeTemplateId) ?? null : null}
             />
           </div>
-
-          <TemplateShelf
-            templates={templates}
-            activeTemplateId={activeTemplateId}
-            onSelect={handleSelectTemplate}
-            onRename={handleRenameTemplate}
-            onDelete={handleDeleteTemplate}
-          />
 
           {outputResults.length > 0 ? (
             <section className="panel previewPanel">
