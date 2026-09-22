@@ -1,5 +1,3 @@
-import { createZipBlob } from './zip';
-
 export const readFileAsArrayBuffer = (file: File): Promise<ArrayBuffer> =>
   new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -34,43 +32,10 @@ export const downloadBlob = (blob: Blob, fileName: string) => {
   const anchor = document.createElement('a');
   anchor.href = url;
   anchor.download = fileName;
+  document.body.appendChild(anchor);
   anchor.click();
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-};
-
-export const shareOrDownloadBlob = async (blob: Blob, fileName: string) => {
-  const file = new File([blob], fileName, { type: blob.type || 'application/pdf' });
-  if (navigator.share && navigator.canShare?.({ files: [file] })) {
-    try {
-      await navigator.share({ files: [file], title: fileName });
-      return 'shared' as const;
-    } catch (error) {
-      if (error instanceof DOMException && error.name === 'AbortError') return 'cancelled' as const;
-      // Fall back to a normal download if Web Share fails unexpectedly.
-    }
-  }
-  downloadBlob(blob, fileName);
-  return 'downloaded' as const;
-};
-
-export const shareOrDownloadMany = async (
-  entries: Array<{ blob: Blob; fileName: string }>,
-  archiveName: string,
-) => {
-  const files = entries.map(({ blob, fileName }) => new File([blob], fileName, { type: 'application/pdf' }));
-  if (navigator.share && navigator.canShare?.({ files })) {
-    try {
-      await navigator.share({ files, title: 'Готовые PDF' });
-      return 'shared' as const;
-    } catch (error) {
-      if (error instanceof DOMException && error.name === 'AbortError') return 'cancelled' as const;
-      // ZIP remains a reliable fallback when multi-file Web Share fails.
-    }
-  }
-
-  const archive = await createZipBlob(entries);
-  downloadBlob(archive, archiveName);
-  return 'downloaded-zip' as const;
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
 };
 
 export const makeId = (prefix: string) =>

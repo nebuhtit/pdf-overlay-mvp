@@ -6,11 +6,12 @@ import { TemplateShelf } from './components/TemplateShelf';
 import { applyTemplate, loadPdfInfo, optimizePdfBytes, releasePdfPreview } from './lib/pdf';
 import { createDefaultPlacement, clonePlacementForPage } from './lib/placements';
 import { deleteTemplate, listTemplates, upsertTemplate } from './lib/storage';
-import { loadImageSize, makeId, readFileAsDataUrl, shareOrDownloadBlob, shareOrDownloadMany } from './lib/files';
+import { downloadBlob, loadImageSize, makeId, readFileAsDataUrl } from './lib/files';
+import { createZipBlob } from './lib/zip';
 import type { OverlayRole, PdfAsset, PdfDocInfo, Placement, TemplateRecord } from './types';
 import { formatBytes } from './lib/format';
 
-const APP_VERSION = '0.7.0';
+const APP_VERSION = '0.8.0';
 
 const ensureActivePlacement = (placements: Placement[], pageIndex: number) => {
   const currentPagePlacements = placements.filter((placement) => placement.pageIndex === pageIndex);
@@ -317,6 +318,22 @@ export default function App() {
     setActivePlacementId(placement.id);
   };
 
+  const handleRemovePlacement = (placementId: string) => {
+    const placement = placements.find((item) => item.id === placementId);
+    if (!placement) return;
+    rememberPlacements();
+    setPlacements((current) => current.filter((item) => item.id !== placementId));
+    setActivePlacementId(null);
+    clearOutputResults();
+    setBusyMessage(`${placement.role === 'stamp' ? 'Печать' : 'Подпись'} удалена со страницы ${placement.pageIndex + 1}. Можно отменить.`);
+  };
+
+  const handleRemoveAsset = (role: OverlayRole) => {
+    setAssets((current) => ({ ...current, [role]: null }));
+    clearOutputResults();
+    setBusyMessage(`${role === 'stamp' ? 'Печать' : 'Подпись'} PNG убрана. Координаты сохранены; для обновления шаблона сохраните его снова.`);
+  };
+
   const handleCopyPagePlacements = (sourcePageIndex: number, targetPageIndex: number | 'all') => {
     if (!sourceDoc) return;
     const selectedPlacements = placements.filter((placement) => placement.pageIndex === sourcePageIndex);
@@ -380,25 +397,37 @@ export default function App() {
     return nextResults;
   };
 
-  const handleExportPdf = async () => {
-    const results = outputResults.length > 0 ? outputResults : await handleApplyTemplate();
-    const result = results[outputResults.length > 0 ? previewIndex : 0];
-    if (!result) return;
-    await exportResult(result);
+  const downloadResults = async (results: typeof outputResults) => {
+    if (results.length === 0) return;
+    if (results.length === 1) {
+      const result = results[0];
+      downloadBlob(result.blob, `${result.sourceName.replace(/\.pdf$/i, '')}-готово.pdf`);
+      setBusyMessage('Сохранение готового PDF запущено. Проверьте загрузки браузера.');
+      return;
+    }
+    const entries = results.map((result) => ({
+      blob: result.blob,
+      fileName: `${result.sourceName.replace(/\.pdf$/i, '')}-готово.pdf`,
+    }));
+    const archive = await createZipBlob(entries);
+    downloadBlob(archive, `готовые-pdf-${new Date().toISOString().slice(0, 10)}.zip`);
+    setBusyMessage(`Сохранение ZIP с ${entries.length} PDF запущено. Проверьте загрузки браузера.`);
   };
 
-  const exportResult = async (result: (typeof outputResults)[number]) => {
-    if (!result) return;
-    const baseName = result.sourceName.replace(/\.pdf$/i, '');
-    const action = await shareOrDownloadBlob(result.blob, `${baseName}-готово.pdf`);
-    if (action === 'shared') setBusyMessage('PDF передан через меню «Поделиться».');
-    if (action === 'downloaded') setBusyMessage('PDF сохранён в загрузки.');
-    if (action === 'cancelled') setBusyMessage('Экспорт отменён.');
+  const handleExportPdf = async () => {
+    if (isProcessing || isOptimizingPdf || isExportingAll) return;
+    const results = await handleApplyTemplate();
+    try {
+      await downloadResults(results);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'неизвестная ошибка';
+      setBusyMessage(`Не удалось сохранить PDF: ${message}. Готовые файлы доступны ниже.`);
+    }
   };
 
   const downloadResult = async (index: number) => {
     const result = outputResults[index];
-    if (result) await exportResult(result);
+    if (result) await downloadResults([result]);
   };
 
   const handleExportAll = async () => {
@@ -406,15 +435,7 @@ export default function App() {
     setIsExportingAll(true);
     setBusyMessage(`Готовлю экспорт ${outputResults.length} PDF…`);
     try {
-      const entries = outputResults.map((result) => ({
-        blob: result.blob,
-        fileName: `${result.sourceName.replace(/\.pdf$/i, '')}-готово.pdf`,
-      }));
-      const date = new Date().toISOString().slice(0, 10);
-      const action = await shareOrDownloadMany(entries, `готовые-pdf-${date}.zip`);
-      if (action === 'shared') setBusyMessage(`Передано файлов: ${entries.length}.`);
-      if (action === 'downloaded-zip') setBusyMessage(`Сохранён ZIP: ${entries.length} PDF.`);
-      if (action === 'cancelled') setBusyMessage('Пакетный экспорт отменён.');
+      await downloadResults(outputResults);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'неизвестная ошибка';
       setBusyMessage(`Не удалось экспортировать все PDF: ${message}`);
@@ -512,6 +533,7 @@ export default function App() {
                 <strong>Очередь: {targetDocs.length}</strong>
                 <button type="button" onClick={clearTargetPdfs}>Очистить</button>
               </div>
+              <small className="batchQueueHint">К каждому PDF применяется текущий шаблон. Итог сохраняется одним ZIP.</small>
               {targetDocs.map((doc, index) => (
                 <div className="batchQueueItem" key={`${doc.name}-${doc.fileSize}-${index}`}>
                   <div>
@@ -612,6 +634,8 @@ export default function App() {
               optimizeImages={optimizeImages}
               onToggleOptimize={() => setOptimizeImages((value) => !value)}
               onAddPlacement={handleAddPlacement}
+              onRemovePlacement={handleRemovePlacement}
+              onRemoveAsset={handleRemoveAsset}
               onBeginPlacementChange={rememberPlacements}
               onUpdatePlacement={handlePlacementUpdate}
               onCopyPagePlacements={handleCopyPagePlacements}
@@ -650,7 +674,7 @@ export default function App() {
                       onClick={() => void handleExportAll()}
                       disabled={isExportingAll}
                     >
-                      {isExportingAll ? 'Готовлю ZIP…' : `Экспортировать все (${outputResults.length})`}
+      {isExportingAll ? 'Готовлю ZIP…' : `Скачать все (${outputResults.length}) ZIP`}
                     </button>
                   ) : null}
                 </div>

@@ -12,6 +12,8 @@ type Props = {
   optimizeImages: boolean;
   onToggleOptimize: () => void;
   onAddPlacement: (role: OverlayRole) => void;
+  onRemovePlacement: (placementId: string) => void;
+  onRemoveAsset: (role: OverlayRole) => void;
   onBeginPlacementChange: () => void;
   onUpdatePlacement: (placementId: string, patch: Partial<Placement>) => void;
   onCopyPagePlacements: (sourcePageIndex: number, targetPageIndex: number | 'all') => void;
@@ -34,6 +36,8 @@ export function ControlPanel({
   optimizeImages,
   onToggleOptimize,
   onAddPlacement,
+  onRemovePlacement,
+  onRemoveAsset,
   onBeginPlacementChange,
   onUpdatePlacement,
   onCopyPagePlacements,
@@ -166,6 +170,9 @@ export function ControlPanel({
               />
             </label>
           </div>
+          <button type="button" className="removePlacementButton" onClick={() => onRemovePlacement(activePlacement.id)}>
+            Удалить {activePlacement.role === 'stamp' ? 'печать' : 'подпись'} с этой страницы
+          </button>
         </div>
       ) : (
         <p className="muted">Выберите блок на странице, чтобы менять координаты и размер.</p>
@@ -176,11 +183,13 @@ export function ControlPanel({
           <span>Печать</span>
           <strong>{assets.stamp ? assets.stamp.fileName : 'не загружена'}</strong>
           <small>{assets.stamp ? formatBytes(assets.stamp.byteSize) : 'PNG локально'}</small>
+          {assets.stamp ? <button type="button" onClick={() => onRemoveAsset('stamp')}>Убрать PNG печати</button> : null}
         </div>
         <div>
           <span>Подпись</span>
           <strong>{assets.signature ? assets.signature.fileName : 'не загружена'}</strong>
           <small>{assets.signature ? formatBytes(assets.signature.byteSize) : 'PNG локально'}</small>
+          {assets.signature ? <button type="button" onClick={() => onRemoveAsset('signature')}>Убрать PNG подписи</button> : null}
         </div>
       </div>
 
@@ -189,10 +198,10 @@ export function ControlPanel({
           Сохранить шаблон
         </button>
         <button type="button" className="primary secondaryAccent" onClick={onApplyTemplate} disabled={isProcessing}>
-          {isProcessing ? 'Обрабатываю PDF…' : 'Обработать выбранные PDF'}
+          {isProcessing ? 'Обрабатываю PDF…' : 'Обработать для предпросмотра'}
         </button>
         <button type="button" className="primary ghost" onClick={onExportPdf} disabled={isProcessing}>
-          Экспортировать готовый PDF
+          {isProcessing ? 'Обрабатываю PDF…' : 'Обработать и сохранить PDF'}
         </button>
       </div>
 
