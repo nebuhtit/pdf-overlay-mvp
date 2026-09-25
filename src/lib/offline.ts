@@ -1,4 +1,7 @@
+import { Capacitor } from '@capacitor/core';
+
 export async function checkOfflineReady(): Promise<boolean> {
+  if (Capacitor.isNativePlatform()) return true;
   if (!import.meta.env.PROD || !('serviceWorker' in navigator) || !('MessageChannel' in window)) return false;
 
   try {

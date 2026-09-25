@@ -11,8 +11,9 @@ import { createZipBlob } from './lib/zip';
 import type { OverlayRole, PdfAsset, PdfDocInfo, Placement, TemplateRecord } from './types';
 import { formatBytes } from './lib/format';
 import { checkOfflineReady } from './lib/offline';
+import { listenForIncomingPdfs } from './lib/incomingFiles';
 
-const APP_VERSION = '1.0.3';
+const APP_VERSION = '1.1.0';
 
 type ProcessedPdf = {
   sourceName: string;
@@ -40,7 +41,7 @@ const copyPlacements = (placements: Placement[], sourcePageIndex: number, target
 };
 
 export default function App() {
-  const [templates, setTemplates] = useState<TemplateRecord[]>(() => listTemplates());
+  const [templates, setTemplates] = useState<TemplateRecord[]>([]);
   const [templateName, setTemplateName] = useState('Без названия');
   const [sourceDoc, setSourceDoc] = useState<PdfDocInfo | null>(null);
   const [targetDocs, setTargetDocs] = useState<PdfDocInfo[]>([]);
@@ -64,6 +65,16 @@ export default function App() {
   const [compactMode, setCompactMode] = useState(() => window.matchMedia('(max-width: 720px), (pointer: coarse)').matches);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isExportingAll, setIsExportingAll] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    void listTemplates().then((storedTemplates) => {
+      if (mounted) setTemplates(storedTemplates);
+    });
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -174,6 +185,14 @@ export default function App() {
     setBusyMessage(`В очереди ${docs.length} PDF${errors.length ? `, ошибок: ${errors.length}` : ''}.`);
   };
 
+  useEffect(() => listenForIncomingPdfs(
+    async (files) => {
+      await loadTargetPdfs(files);
+      setBusyMessage(`Получено из другого приложения: ${files.length} PDF. Выберите шаблон и запустите обработку.`);
+    },
+    (message) => setBusyMessage(`Ошибка приёма PDF: ${message}`),
+  ), []);
+
   const removeTargetPdf = (index: number) => {
     setTargetDocs((current) => current.filter((_, itemIndex) => itemIndex !== index));
   };
@@ -209,7 +228,7 @@ export default function App() {
     setAssets((current) => ({ ...current, [role]: asset }));
   };
 
-  const handleSaveTemplate = () => {
+  const handleSaveTemplate = async (saveAsNew = false) => {
     if (!sourceDoc) {
       setBusyMessage('Сначала загрузите исходный PDF.');
       return;
@@ -219,12 +238,13 @@ export default function App() {
       return;
     }
 
-    const id = activeTemplateId ?? makeId('template');
+    const id = saveAsNew || !activeTemplateId ? makeId('template') : activeTemplateId;
     const now = new Date().toISOString();
+    const existingTemplate = templates.find((template) => template.id === id);
     const record: TemplateRecord = {
       id,
       name: templateName.trim() || 'Без названия',
-      createdAt: now,
+      createdAt: existingTemplate?.createdAt ?? now,
       updatedAt: now,
       pageCount: sourceDoc.pageMetrics.length,
       pageMetrics: sourceDoc.pageMetrics,
@@ -232,10 +252,16 @@ export default function App() {
       assets,
       optimizeImages,
     };
-    upsertTemplate(record);
-    setTemplates(listTemplates());
-    setActiveTemplateId(id);
-    setBusyMessage(`Шаблон "${record.name}" сохранён локально.`);
+    try {
+      await upsertTemplate(record);
+      setTemplates(await listTemplates());
+      setActiveTemplateId(id);
+      setBusyMessage(`Шаблон "${record.name}" сохранён локально${saveAsNew ? ' как новый' : ''}.`);
+      void navigator.storage?.persist?.();
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : 'неизвестная ошибка';
+      setBusyMessage(`Не удалось сохранить шаблон: ${detail}. Освободите место на устройстве и повторите.`);
+    }
   };
 
   const handleSelectTemplate = (template: TemplateRecord) => {
@@ -249,31 +275,31 @@ export default function App() {
     setBusyMessage(`Шаблон "${template.name}" загружен.`);
   };
 
-  const handleDeleteTemplate = (templateId: string) => {
-    deleteTemplate(templateId);
-    const next = listTemplates();
+  const handleDeleteTemplate = async (templateId: string) => {
+    await deleteTemplate(templateId);
+    const next = await listTemplates();
     setTemplates(next);
     if (templateId === activeTemplateId) {
       setActiveTemplateId(null);
     }
   };
 
-  const handleRenameTemplate = (templateId: string, name: string) => {
+  const handleRenameTemplate = async (templateId: string, name: string) => {
     const template = templates.find((item) => item.id === templateId);
     const nextName = name.trim();
     if (!template || !nextName) return;
-    upsertTemplate({ ...template, name: nextName, updatedAt: new Date().toISOString() });
-    setTemplates(listTemplates());
+    await upsertTemplate({ ...template, name: nextName, updatedAt: new Date().toISOString() });
+    setTemplates(await listTemplates());
     if (templateId === activeTemplateId) setTemplateName(nextName);
     setBusyMessage(`Шаблон переименован в «${nextName}».`);
   };
 
-  const handleToggleTemplateOptimization = (templateId: string, enabled: boolean) => {
+  const handleToggleTemplateOptimization = async (templateId: string, enabled: boolean) => {
     const template = templates.find((item) => item.id === templateId);
     if (!template || isProcessing) return;
     const updated = { ...template, optimizeImages: enabled, updatedAt: new Date().toISOString() };
-    upsertTemplate(updated);
-    setTemplates(listTemplates());
+    await upsertTemplate(updated);
+    setTemplates(await listTemplates());
     if (templateId === activeTemplateId) setOptimizeImages(enabled);
     if (templateId === quickTemplate?.id) setQuickTemplate(updated);
     clearOutputResults();
@@ -690,7 +716,8 @@ export default function App() {
               onBeginPlacementChange={rememberPlacements}
               onUpdatePlacement={handlePlacementUpdate}
               onCopyPagePlacements={handleCopyPagePlacements}
-              onSaveTemplate={handleSaveTemplate}
+              onSaveTemplate={() => void handleSaveTemplate(false)}
+              onSaveTemplateAsNew={() => void handleSaveTemplate(true)}
               onApplyTemplate={handleApplyTemplate}
               onExportPdf={handleExportPdf}
               isProcessing={isProcessing}

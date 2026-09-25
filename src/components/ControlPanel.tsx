@@ -18,6 +18,7 @@ type Props = {
   onUpdatePlacement: (placementId: string, patch: Partial<Placement>) => void;
   onCopyPagePlacements: (sourcePageIndex: number, targetPageIndex: number | 'all') => void;
   onSaveTemplate: () => void;
+  onSaveTemplateAsNew: () => void;
   onApplyTemplate: () => void;
   onExportPdf: () => void;
   isProcessing: boolean;
@@ -42,6 +43,7 @@ export function ControlPanel({
   onUpdatePlacement,
   onCopyPagePlacements,
   onSaveTemplate,
+  onSaveTemplateAsNew,
   onApplyTemplate,
   onExportPdf,
   isProcessing,
@@ -195,8 +197,13 @@ export function ControlPanel({
 
       <div className="stack">
         <button type="button" className="primary" onClick={onSaveTemplate}>
-          Сохранить шаблон
+          {outputTemplate ? 'Сохранить изменения шаблона' : 'Сохранить новый шаблон'}
         </button>
+        {outputTemplate ? (
+          <button type="button" className="primary ghost" onClick={onSaveTemplateAsNew}>
+            Сохранить как новый шаблон
+          </button>
+        ) : null}
         <button type="button" className="primary secondaryAccent" onClick={onApplyTemplate} disabled={isProcessing}>
           {isProcessing ? 'Обрабатываю PDF…' : 'Обработать для предпросмотра'}
         </button>
